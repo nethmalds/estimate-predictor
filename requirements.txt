@@ -1,0 +1,9 @@
+fastapi>=0.115.0
+uvicorn>=0.30.0
+sqlalchemy>=2.0.30
+psycopg2-binary>=2.9.9
+alembic>=1.13.2
+chromadb==0.5.5
+sentence-transformers>=3.0.1
+pdfplumber>=0.11.4
+python-dotenv>=1.0.1
