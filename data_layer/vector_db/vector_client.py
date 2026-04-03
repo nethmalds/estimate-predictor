@@ -1,0 +1,1 @@
+"""Vector client placeholder."""

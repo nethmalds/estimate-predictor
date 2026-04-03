@@ -7,15 +7,15 @@ Deterministic, explainable RAG pipeline that maps BOQ item text to official BSR 
 
 ## Architecture
 
-- `src/ai/rag/pdf_parser.py`: Parse BSR PDF table rows to structured records.
-- `src/ai/rag/db.py`: PostgreSQL data access and upsert logic.
-- `src/ai/rag/embeddings.py`: Embedding generation (`item_no + description + category`).
-- `src/data/vector_db/vector_store.py`: Chroma persistence and candidate retrieval.
-- `src/data/vector_db/chroma_connection.py`: Shared Chroma client/collection dependencies for FastAPI.
-- `src/ai/rag/retriever.py`: Query normalization, token extraction, and top-k retrieval.
-- `src/ai/rag/scorer.py`: Deterministic weighted scoring.
-- `src/ai/rag/service.py`: End-to-end orchestration.
-- `src/app/api.py`: FastAPI endpoints.
+- `ai/rag/pdf_parser.py`: Parse BSR PDF table rows to structured records.
+- `ai/rag/db.py`: PostgreSQL data access and upsert logic.
+- `ai/rag/embeddings.py`: Embedding generation (`item_no + description + category`).
+- `data_layer/vector_db/vector_store.py`: Chroma persistence and candidate retrieval.
+- `data_layer/vector_db/chroma_connection.py`: Shared Chroma client/collection dependencies for FastAPI.
+- `ai/rag/retriever.py`: Query normalization, token extraction, and top-k retrieval.
+- `ai/rag/scorer.py`: Deterministic weighted scoring.
+- `ai/rag/service.py`: End-to-end orchestration.
+- `app/api/controllers/estimation_controller.py`: FastAPI endpoints.
 
 ## Database Schema
 
@@ -100,6 +100,27 @@ Failure response:
   "item_no": "NO_MATCH",
   "confidence": 0.0
 }
+
+### `POST /estimate-project`
+
+```json
+{
+  "description": "Two-storey residential building with 6 rooms.",
+  "floorplan_image_path": "D:/path/to/floorplan.png",
+  "provided_parameters": {
+    "built_up_area": "180",
+    "finish_level": "standard",
+    "structural_system": "RCC frame",
+    "roof_type": "flat slab",
+    "location": "Colombo",
+    "soil_condition": "ordinary",
+    "drainage_type": "surface",
+    "external_works_scope": "basic"
+  }
+}
+```
+
+If required parameters are missing, the response includes `status: "needs_clarification"` and a list of questions.
 ```
 
 ### `POST /api/documents/`
@@ -122,29 +143,29 @@ Batch upload documents to Chroma collection using FastAPI dependency injection.
 1. Install dependencies:
    - `pip install -r requirements.txt`
 2. Start PostgreSQL + Chroma containers:
-  - `docker compose --env-file .env.local up -d postgres_db chroma_db`
+  - `docker compose -f docker/docker-compose.yml --env-file .env.local up -d postgres_db chroma_db`
 3. Ensure env is configured in `.env.local` (see RAG Configuration below).
 4. Apply DB migrations (creates `bsr_items` table):
    - `alembic upgrade head`
 5. Start API:
-   - `uvicorn src.app.server:app --reload`
+  - `uvicorn app.api.server:app --reload`
 6. Run manual PDF ingestion (required before retrieval):
-  - `./scripts/manual_ingest.sh` (uses `src/data/storage/bsr_wp_2025.pdf`)
-  - or `./scripts/manual_ingest.sh "D:/path/to/other_bsr.pdf"`
+  - `python scripts/manual_ingest.py` (uses `data_layer/storage/bsr_wp_2025.pdf`)
+  - or `python scripts/manual_ingest.py "D:/path/to/other_bsr.pdf"`
 7. Match BOQ items using `/match-boq`
 
 ## Manual Ingestion
 
 BSR PDF ingestion into PostgreSQL + Chroma is run manually via script.
 
-- Script: `scripts/manual_ingest.sh`
-- Under the hood: `python -m src.ai.rag.manual_ingest --pdf-path <path>`
+- Script: `scripts/manual_ingest.py`
+- Under the hood: `python -m ai.rag.manual_ingest --pdf-path <path>`
 
 This keeps ingestion decoupled from API runtime, and retrieval only runs when matching endpoints are called.
 
 ## Centralized DB Config
 
-All DB and retrieval configuration lives in `src/config/database.py`.
+All DB and retrieval configuration lives in `core/config/settings.py`.
 
 ## RAG Configuration
 
@@ -158,3 +179,11 @@ Use these variables for RAG (loaded from `.env.local`):
 - `EMBEDDING_MODEL`
 - `RETRIEVAL_TOP_K`
 - `MIN_CONFIDENCE_THRESHOLD`
+
+## LLM Configuration
+
+The Ollama client uses `.env.local` variables:
+
+- `OLLAMA_API_KEY`
+- `OLLAMA_HOST`
+- `OLLAMA_MODEL` (default: `glm-5:cloud`)
