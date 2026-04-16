@@ -1,0 +1,10 @@
+Use the user description and clarification answers to extract project details.
+Return only JSON with keys: building_type, floors, spaces, parameters, explicit_parameters, assumptions.
+The parameters object must contain bedrooms, bathrooms, built_up_area, finish_level, roof_type.
+Building type is always residential; use "residential" if missing.
+
+Description:
+${description}
+
+Clarifications:
+${clarifications}
