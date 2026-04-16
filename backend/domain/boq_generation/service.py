@@ -1,0 +1,1 @@
+"""BOQ generation service placeholder."""

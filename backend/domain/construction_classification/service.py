@@ -1,0 +1,1 @@
+"""Construction classification service placeholder."""
