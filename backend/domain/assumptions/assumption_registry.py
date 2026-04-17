@@ -1,1 +1,0 @@
-"""Assumption registry placeholder."""

@@ -42,6 +42,43 @@ export default function Home() {
     if (typeof result === "string") return result;
 
     try {
+      const r = result as Record<string, unknown>;
+
+      if (r.status === "draft_boq") {
+        const info = r.project_info as Record<string, unknown> | undefined;
+        const items = (r.boq_items as Record<string, unknown>[]) ?? [];
+
+        const paramLines = info?.parameters
+          ? Object.entries(info.parameters as Record<string, unknown>)
+              .map(([k, v]) => `  ${k}: ${v}`)
+              .join("\n")
+          : "";
+
+        const itemLines = items
+          .map((item, i) => {
+            const desc = item.description ?? item.bsr_description ?? "—";
+            const section = item.section ? `[${item.section}] ` : "";
+            const unit = item.unit ? ` (${item.unit})` : "";
+            const rate = item.rate != null ? ` @ ${item.rate}` : "";
+            const conf =
+              item.match_confidence != null
+                ? ` — ${Math.round((item.match_confidence as number) * 100)}% match`
+                : "";
+            return `${i + 1}. ${section}${desc}${unit}${rate}${conf}`;
+          })
+          .join("\n");
+
+        return [
+          "Draft Bill of Quantities",
+          "========================",
+          paramLines ? `Project Parameters:\n${paramLines}\n` : "",
+          `Items (${items.length}):`,
+          itemLines || "  No items generated.",
+        ]
+          .filter(Boolean)
+          .join("\n");
+      }
+
       return JSON.stringify(result, null, 2);
     } catch {
       return "I received a response, but could not display it.";
@@ -82,15 +119,6 @@ export default function Home() {
         description: trimmedInput,
         floorplanImageUrl: trimmedFloorplanUrl || null,
       });
-      if (result.status === "estimated") {
-        setMessages((prev) => [
-          ...prev,
-          { role: "assistant", content: formatAssistantReply(result.result) }
-        ]);
-        setIsLoading(false);
-        return;
-      }
-
       setClarificationSessionId(result.session_id);
       setCurrentQuestion(null);
       eventSourceRef.current?.close();
@@ -107,7 +135,10 @@ export default function Home() {
         setIsLoading(false);
       });
 
+      let streamCompleted = false;
+
       source.addEventListener("completed", (event) => {
+        streamCompleted = true;
         const data = JSON.parse((event as MessageEvent).data) as unknown;
         setMessages((prev) => [
           ...prev,
@@ -128,10 +159,24 @@ export default function Home() {
         setCurrentQuestion(null);
       });
 
+      source.addEventListener("error", (event) => {
+        streamCompleted = true;
+        const raw = (event as MessageEvent).data;
+        const msg = raw
+          ? (JSON.parse(raw) as { message?: string }).message ?? "An error occurred."
+          : "An error occurred during estimation.";
+        setMessages((prev) => [...prev, { role: "assistant", content: msg }]);
+        setClarificationSessionId(null);
+        setCurrentQuestion(null);
+        setIsLoading(false);
+        source.close();
+      });
+
       source.onerror = () => {
+        if (streamCompleted) return;
         setMessages((prev) => [
           ...prev,
-          { role: "assistant", content: "Sorry, the clarification stream disconnected." }
+          { role: "assistant", content: "Sorry, the connection was lost. Please try again." }
         ]);
         setClarificationSessionId(null);
         setCurrentQuestion(null);

@@ -3,11 +3,11 @@ export type EstimationRequest = {
 	floorplanImageUrl?: string | null;
 };
 
-export type EstimationResponse = unknown;
-
-export type ClarificationStartResponse =
-	| { status: "estimated"; result: EstimationResponse }
-	| { status: "needs_clarification"; session_id: string };
+export type ClarificationStartResponse = {
+	status: "session_started";
+	session_id: string;
+	needs_clarification: boolean;
+};
 
 export type ClarificationAnswerResponse = {
 	status: string;
@@ -28,37 +28,6 @@ const buildRequestBody = (payload: EstimationRequest) => {
 
 	return body;
 };
-
-export async function estimateProject(
-	payload: EstimationRequest,
-	options?: { signal?: AbortSignal }
-): Promise<EstimationResponse> {
-	const response = await fetch(buildUrl("/api/estimate-project"), {
-		method: "POST",
-		headers: {
-			"Content-Type": "application/json",
-		},
-		body: JSON.stringify(buildRequestBody(payload)),
-		signal: options?.signal,
-	});
-
-	if (!response.ok) {
-		let message = "Request failed";
-
-		try {
-			const data = await response.json();
-			if (typeof data?.detail === "string") {
-				message = data.detail;
-			}
-		} catch {
-			// Ignore JSON parse errors and use the fallback message.
-		}
-
-		throw new Error(message);
-	}
-
-	return response.json();
-}
 
 export async function startClarificationSession(
 	payload: EstimationRequest,

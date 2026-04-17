@@ -1,7 +1,7 @@
 from fastapi import HTTPException
 from pydantic import BaseModel
 
-from application.workflows.floorplan_workflow import run_floorplan_workflow
+from application.pipelines.floorplan_pipeline import execute_floorplan_pipeline
 
 
 class FloorPlanOCRRequest(BaseModel):
@@ -10,7 +10,7 @@ class FloorPlanOCRRequest(BaseModel):
 
 def extract_floorplan_dimensions(payload: FloorPlanOCRRequest):
     try:
-        return run_floorplan_workflow(payload.image_path)
+        return execute_floorplan_pipeline(payload.image_path)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ImportError as exc:

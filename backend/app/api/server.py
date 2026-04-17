@@ -1,16 +1,17 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from infrastructure.ai.rag.service import service
+from services.rag_process.service import service
 from app.api.routes.router import router as api_router
+from app.api.middleware.request_logging import RequestLoggingMiddleware
+from app.api.state.session import process_store
 from core.config.settings import settings
 from core.exceptions.error_handlers import register_exception_handlers
-from core.logging.logger import get_logger, setup_logging
-
-setup_logging(settings.log_level)
+from core.logging.logger import get_logger
 logger = get_logger(__name__)
 
 app = FastAPI()
+app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_allow_origins,
@@ -26,6 +27,7 @@ app.include_router(api_router)
 def startup_event() -> None:
     logger.info("API startup initiated")
     service.bootstrap()
+    process_store.start_cleanup()
 
 @app.get("/")
 def read_root():
