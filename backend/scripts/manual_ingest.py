@@ -61,7 +61,7 @@ def main() -> int:
 
     run_cmd(
         python_bin,
-        ["-m", "ai.rag.manual_ingest", "--pdf-path", str(pdf_path)],
+        ["-m", "services.rag_process.manual_ingest", "--pdf-path", str(pdf_path)],
         root,
     )
     return 0

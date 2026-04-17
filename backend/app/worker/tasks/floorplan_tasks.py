@@ -1,5 +1,5 @@
-from application.workflows.floorplan_workflow import run_floorplan_workflow
+from application.pipelines.floorplan_pipeline import execute_floorplan_pipeline
 
 
 def run_floorplan_task(image_path: str) -> dict:
-    return run_floorplan_workflow(image_path)
+    return execute_floorplan_pipeline(image_path)

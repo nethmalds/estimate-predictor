@@ -6,19 +6,23 @@ from core.config.settings import settings
 
 
 _DEFAULT_MODEL = "glm-5:cloud"
+_client: Client | None = None
 
 
-def _build_client() -> Client:
-    host = settings.ollama_host or "https://ollama.com"
-    api_key = settings.ollama_api_key
-    headers = {}
-    if api_key:
-        headers["Authorization"] = f"Bearer {api_key}"
-    return Client(host=host, headers=headers)
+def _get_client() -> Client:
+    global _client
+    if _client is None:
+        host = settings.ollama_host or "http://localhost:11434"
+        api_key = settings.ollama_api_key
+        headers = {}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+        _client = Client(host=host, headers=headers)
+    return _client
 
 
 def chat(messages: list[dict], model: str | None = None, stream: bool = False) -> str:
-    client = _build_client()
+    client = _get_client()
     model_name = model or settings.ollama_model or _DEFAULT_MODEL
     response = client.chat(model_name, messages=messages, stream=stream)
     if stream:

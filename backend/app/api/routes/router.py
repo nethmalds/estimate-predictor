@@ -1,7 +1,8 @@
 from fastapi import APIRouter
 
 from app.api.controllers.estimation_controller import (
-	estimate_project,
+	start_estimation_stream,
+	stream_estimation,
 	get_documents,
 	ingest_bsr,
 	match_boq,
@@ -17,7 +18,8 @@ router = APIRouter(prefix="/api")
 
 router.post("/match-boq")(match_boq)
 router.post("/ingest-bsr")(ingest_bsr)
-router.post("/estimate-project")(estimate_project)
+router.post("/estimate-project/stream/start")(start_estimation_stream)
+router.get("/estimate-project/stream/{session_id}")(stream_estimation)
 router.post("/estimate-project/clarification/start")(start_clarification)
 router.post("/estimate-project/clarification/{session_id}/answer")(submit_clarification_answer)
 router.get("/estimate-project/clarification/stream/{session_id}")(stream_clarification)

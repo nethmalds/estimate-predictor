@@ -1,3 +1,4 @@
+import asyncio
 import json
 import re
 from typing import Any
@@ -6,12 +7,13 @@ from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from infrastructure.ai.llm.clarification_agent import build_clarification_questions, find_missing_fields
-from infrastructure.ai.llm.llm_client import (
+from core.logging.logger import get_logger
+from services.clarification_process.clarification_agent import build_clarification_questions, find_missing_fields
+from services.clarification_process.llm_client import (
     extract_project_info,
     extract_project_info_with_clarifications,
 )
-from app.api.controllers.clarification_session import clarification_store
+from app.api.state.session import process_store
 from application.pipelines.estimation_pipeline import run_estimation_pipeline_from_project_info
 
 _BASELINE_BUILT_UP_AREA = 1800
@@ -20,6 +22,8 @@ _FINISH_LEVEL_OPTIONS = {
     "2": "semi-luxury",
     "3": "full luxury",
 }
+
+logger = get_logger(__name__)
 
 
 class ClarificationStartRequest(BaseModel):
@@ -33,30 +37,55 @@ class ClarificationAnswerRequest(BaseModel):
 
 async def start_clarification(payload: ClarificationStartRequest):
     try:
-        project_info = extract_project_info(payload.description)
+        project_info = await asyncio.to_thread(extract_project_info, payload.description)
         missing_fields = find_missing_fields(project_info)
-        if not missing_fields:
-            result = run_estimation_pipeline_from_project_info(
-                project_info,
-                floorplan_image_url=payload.floorplan_image_url,
-            )
-            return {"status": "estimated", "result": result}
-
         questions = build_clarification_questions(missing_fields)
-        session = await clarification_store.create_session(
+        session = await process_store.create_session(
             description=payload.description,
             floorplan_image_url=payload.floorplan_image_url,
             project_info=project_info,
             missing_fields=missing_fields,
             questions=questions,
+            session_type="clarification",
         )
+        if missing_fields:
+            await _queue_progress(
+                session,
+                "clarification_question",
+                "pending",
+                {
+                    "field": missing_fields[0],
+                    "question": questions[0],
+                    "remaining": len(missing_fields),
+                },
+            )
+            await session.queue.put(
+                {
+                    "event": "question",
+                    "data": {"field": missing_fields[0], "question": questions[0]},
+                }
+            )
+            return {
+                "status": "session_started",
+                "session_id": session.session_id,
+                "needs_clarification": True,
+            }
+
         await session.queue.put(
             {
-                "event": "question",
-                "data": {"field": missing_fields[0], "question": questions[0]},
+                "event": "info",
+                "data": {
+                    "message": "Thanks! Preparing your estimate now. This usually takes about 10-20 seconds.",
+                },
             }
         )
-        return {"status": "needs_clarification", "session_id": session.session_id}
+        await _queue_progress(session, "clarification_complete", "skipped", None)
+        asyncio.create_task(_run_pipeline_and_complete(session, project_info, payload.floorplan_image_url))
+        return {
+            "status": "session_started",
+            "session_id": session.session_id,
+            "needs_clarification": False,
+        }
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
@@ -65,13 +94,17 @@ async def submit_clarification_answer(
     session_id: str,
     payload: ClarificationAnswerRequest,
 ):
-    session = await clarification_store.get_session(session_id)
+    session = await process_store.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Clarification session not found.")
 
     if session.awaiting_confirmation:
         response = payload.answer.strip().lower()
         if response not in {"yes", "no"}:
+            logger.info(
+                "session_event session_id=%s type=clarification event=confirmation_invalid",
+                session.session_id,
+            )
             await session.queue.put(
                 {
                     "event": "question",
@@ -84,7 +117,12 @@ async def submit_clarification_answer(
             return {"status": "awaiting_confirmation"}
 
         if response == "no":
-            refreshed_info = extract_project_info(session.description)
+            logger.info(
+                "session_event session_id=%s type=clarification event=confirmation_rejected",
+                session.session_id,
+            )
+            await _queue_progress(session, "clarification_confirmation", "rejected", None)
+            refreshed_info = await asyncio.to_thread(extract_project_info, session.description)
             session.project_info = refreshed_info
             session.answers = {}
             session.missing_fields = find_missing_fields(refreshed_info)
@@ -93,6 +131,20 @@ async def submit_clarification_answer(
             session.awaiting_confirmation = False
             session.confirmed_project_info = None
             if session.missing_fields:
+                logger.info(
+                    "session_event session_id=%s type=clarification event=question",
+                    session.session_id,
+                )
+                await _queue_progress(
+                    session,
+                    "clarification_question",
+                    "pending",
+                    {
+                        "field": session.missing_fields[0],
+                        "question": session.questions[0],
+                        "remaining": len(session.missing_fields),
+                    },
+                )
                 await session.queue.put(
                     {
                         "event": "question",
@@ -105,6 +157,11 @@ async def submit_clarification_answer(
                 return {"status": "needs_clarification"}
 
         confirmed_info = session.confirmed_project_info or session.project_info
+        logger.info(
+            "session_event session_id=%s type=clarification event=confirmation_accepted",
+            session.session_id,
+        )
+        await _queue_progress(session, "clarification_confirmation", "accepted", None)
         await session.queue.put(
             {
                 "event": "info",
@@ -113,16 +170,16 @@ async def submit_clarification_answer(
                 },
             }
         )
-        result = run_estimation_pipeline_from_project_info(
-            confirmed_info,
-            floorplan_image_url=session.floorplan_image_url,
-        )
-        await session.queue.put({"event": "completed", "data": result})
         session.awaiting_confirmation = False
         session.confirmed_project_info = None
+        asyncio.create_task(_run_pipeline_and_complete(session, confirmed_info, session.floorplan_image_url))
         return {"status": "processing"}
 
     if session.current_index >= len(session.missing_fields):
+        logger.info(
+            "session_event session_id=%s type=clarification event=completed",
+            session.session_id,
+        )
         return {"status": "completed"}
 
     field = session.missing_fields[session.current_index]
@@ -132,17 +189,42 @@ async def submit_clarification_answer(
     normalized_value = _get_project_info_value(session.project_info, field)
     if normalized_value is not None:
         session.answers[field] = normalized_value
+    await _queue_progress(
+        session,
+        "clarification_answer",
+        "received",
+        {
+            "field": field,
+            "value": session.answers.get(field),
+            "index": session.current_index,
+        },
+    )
     session.current_index += 1
 
     if session.current_index < len(session.missing_fields):
         next_field = session.missing_fields[session.current_index]
         next_question = session.questions[session.current_index]
+        logger.info(
+            "session_event session_id=%s type=clarification event=question",
+            session.session_id,
+        )
+        await _queue_progress(
+            session,
+            "clarification_question",
+            "pending",
+            {
+                "field": next_field,
+                "question": next_question,
+                "remaining": len(session.missing_fields) - session.current_index,
+            },
+        )
         await session.queue.put(
             {"event": "question", "data": {"field": next_field, "question": next_question}}
         )
         return {"status": "awaiting_clarification"}
 
-    clarified_info = extract_project_info_with_clarifications(
+    clarified_info = await asyncio.to_thread(
+        extract_project_info_with_clarifications,
         session.description,
         session.answers,
     )
@@ -153,6 +235,20 @@ async def submit_clarification_answer(
         session.missing_fields = remaining_fields
         session.questions = build_clarification_questions(remaining_fields)
         session.current_index = 0
+        logger.info(
+            "session_event session_id=%s type=clarification event=question",
+            session.session_id,
+        )
+        await _queue_progress(
+            session,
+            "clarification_question",
+            "pending",
+            {
+                "field": remaining_fields[0],
+                "question": session.questions[0],
+                "remaining": len(remaining_fields),
+            },
+        )
         await session.queue.put(
             {
                 "event": "question",
@@ -164,6 +260,16 @@ async def submit_clarification_answer(
     session.awaiting_confirmation = True
     session.confirmed_project_info = clarified_info
     summary = _build_confirmation_summary(clarified_info)
+    logger.info(
+        "session_event session_id=%s type=clarification event=confirmation_requested",
+        session.session_id,
+    )
+    await _queue_progress(
+        session,
+        "clarification_confirmation",
+        "pending",
+        None,
+    )
     await session.queue.put(
         {
             "event": "question",
@@ -173,20 +279,62 @@ async def submit_clarification_answer(
     return {"status": "awaiting_confirmation"}
 
 
+async def _run_pipeline_and_complete(session, project_info: dict, floorplan_image_url: str | None) -> None:
+    try:
+        result = await asyncio.to_thread(
+            run_estimation_pipeline_from_project_info,
+            project_info,
+            floorplan_image_url=floorplan_image_url,
+            progress_callback=_build_progress_callback(session),
+        )
+        await session.queue.put({"event": "completed", "data": result})
+        logger.info("session_end session_id=%s type=clarification", session.session_id)
+    except Exception as exc:  # noqa: BLE001
+        await session.queue.put({"event": "error", "data": {"message": str(exc)}})
+        logger.exception("session_error session_id=%s type=clarification", session.session_id)
+
+
+def _build_progress_callback(session) -> callable:
+    def _progress(step: str, status: str, data: dict | None) -> None:
+        logger.info(
+            "clarification_progress step=%s status=%s session_id=%s",
+            step,
+            status,
+            session.session_id,
+        )
+
+    return _progress
+
+
+async def _queue_progress(session, step: str, status: str, data: dict | None) -> None:
+    logger.info(
+        "clarification_progress step=%s status=%s session_id=%s",
+        step,
+        status,
+        session.session_id,
+    )
+
+
 async def stream_clarification(session_id: str):
-    session = await clarification_store.get_session(session_id)
+    session = await process_store.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Clarification session not found.")
 
     async def event_generator():
-        try:
-            while True:
-                event = await session.queue.get()
-                yield _format_sse(event["event"], event["data"])
-                if event["event"] == "completed":
-                    break
-        finally:
-            await clarification_store.delete_session(session_id)
+        while True:
+            try:
+                event = await asyncio.wait_for(session.queue.get(), timeout=20.0)
+            except asyncio.TimeoutError:
+                yield ": keepalive\n\n"
+                continue
+            logger.info(
+                "session_event session_id=%s type=clarification event=%s",
+                session.session_id,
+                event["event"],
+            )
+            yield _format_sse(event["event"], event["data"])
+            if event["event"] in {"completed", "error"}:
+                break
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
@@ -281,3 +429,5 @@ def _build_confirmation_summary(project_info: dict) -> str:
         f"- Roof type: {roof_type}\n"
         "Reply with yes or no."
     )
+
+

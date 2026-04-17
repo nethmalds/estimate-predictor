@@ -1,0 +1,1 @@
+"""Item generation service placeholder."""

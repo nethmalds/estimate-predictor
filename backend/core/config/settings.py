@@ -90,9 +90,9 @@ class DatabaseSettings:
 
 	database_url: str = field(default_factory=_database_url)
 
-	chroma_collection: str = field(default_factory=lambda: _optional_env("CHROMA_COLLECTION"))
-	chroma_host: str = field(default_factory=lambda: _optional_env("CHROMA_HOST"))
-	chroma_port: int = field(default_factory=lambda: _optional_int("CHROMA_PORT"))
+	chroma_collection: str | None = field(default_factory=lambda: _optional_env("CHROMA_COLLECTION"))
+	chroma_host: str | None = field(default_factory=lambda: _optional_env("CHROMA_HOST"))
+	chroma_port: int | None = field(default_factory=lambda: _optional_int("CHROMA_PORT"))
 	chroma_ssl: bool = field(default_factory=lambda: _optional_bool("CHROMA_SSL", default=False))
 	chroma_api_key: str | None = field(default_factory=lambda: _optional_env("CHROMA_API_KEY"))
 
@@ -101,6 +101,7 @@ class DatabaseSettings:
 	min_confidence_threshold: float = field(default_factory=lambda: _required_float("MIN_CONFIDENCE_THRESHOLD"))
 
 	log_level: str = field(default_factory=lambda: _optional_env("LOG_LEVEL") or "INFO")
+	log_file: str | None = field(default_factory=lambda: _optional_env("LOG_FILE") or "logs/app.log")
 
 	ollama_api_key: str | None = field(default_factory=lambda: _optional_env("OLLAMA_API_KEY"))
 	ollama_host: str | None = field(default_factory=lambda: _optional_env("OLLAMA_HOST"))
