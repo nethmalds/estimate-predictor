@@ -50,8 +50,8 @@ export default function Home() {
 
         const paramLines = info?.parameters
           ? Object.entries(info.parameters as Record<string, unknown>)
-              .map(([k, v]) => `  ${k}: ${v}`)
-              .join("\n")
+            .map(([k, v]) => `  ${k}: ${v}`)
+            .join("\n")
           : "";
 
         const itemLines = items
@@ -159,6 +159,14 @@ export default function Home() {
         setCurrentQuestion(null);
       });
 
+      source.addEventListener("progress", (event) => {
+        const data = JSON.parse((event as MessageEvent).data) as { step: string, status: string, output?: unknown };
+        if (data.status === "dev_log") {
+          console.log(`[DEV LOG] Output from backend step: ${data.step}`);
+          console.log(data.output);
+        }
+      });
+
       source.addEventListener("error", (event) => {
         streamCompleted = true;
         const raw = (event as MessageEvent).data;
@@ -209,11 +217,10 @@ export default function Home() {
               className={`flex w-full ${msg.role === "user" ? "justify-end" : "justify-start"}`}
             >
               <div
-                className={`max-w-[80%] px-5 py-3.5 rounded-2xl shadow-sm ${
-                  msg.role === "user"
-                    ? "bg-blue-600 text-white rounded-br-sm"
-                    : "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 border border-zinc-200 dark:border-zinc-700 rounded-bl-sm"
-                }`}
+                className={`max-w-[80%] px-5 py-3.5 rounded-2xl shadow-sm ${msg.role === "user"
+                  ? "bg-blue-600 text-white rounded-br-sm"
+                  : "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 border border-zinc-200 dark:border-zinc-700 rounded-bl-sm"
+                  }`}
               >
                 <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
               </div>

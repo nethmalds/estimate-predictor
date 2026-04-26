@@ -11,6 +11,7 @@ _REQUIRED_PARAMETER_FIELDS = [
     "built_up_area",
     "finish_level",
     "roof_type",
+    "ceiling_type",
 ]
 
 
@@ -21,7 +22,28 @@ _QUESTIONS = {
     "built_up_area": "What is the total built-up area you have in mind (in square feet or square meters)? If you are unsure, we can start with a baseline (e.g., 1,800 sq. ft.) and adjust later.",
     "finish_level": "Could you tell me about the level of finishes you're looking for? (Options: 1. Standard / Budget, 2. Semi-Luxury, 3. Full Luxury)",
     "roof_type": "What type of roof will you use? (Options: Flat concrete slab, Clay tile roof, Asbestos sheet roof)",
+    "ceiling_type": "What type of ceiling finish will be used? (Options: 1. Gypsum board, 2. Concrete (no false ceiling), 3. Timber, 4. PVC)",
 }
+
+_CEILING_TYPE_MAP: dict[str, str] = {
+    "gypsum": "gypsum",
+    "gypsum board": "gypsum",
+    "1": "gypsum",
+    "concrete": "concrete",
+    "no false ceiling": "concrete",
+    "2": "concrete",
+    "timber": "timber",
+    "wood": "timber",
+    "3": "timber",
+    "pvc": "pvc",
+    "4": "pvc",
+}
+
+
+def normalize_ceiling_type(value: str) -> str | None:
+    """Map a raw user answer to a canonical ceiling type string."""
+    cleaned = value.strip().lower()
+    return _CEILING_TYPE_MAP.get(cleaned)
 
 
 def find_missing_fields(project_info: dict) -> list[str]:
