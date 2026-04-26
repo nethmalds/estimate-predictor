@@ -1,8 +1,27 @@
+"""Three-stage BOQ item generation.
+
+Stage 1 — LLM Initial QS Pass  → baseline BOQ item list
+Stage 2 — Real Item Predictor          → additional candidate items (Random Forest predictions)
+Stage 3 — LLM Gap Fill          → compare baseline vs Item Predictor, add ONLY missing items
+
+Each item in the final list is tagged with a ``source`` field:
+  ``"llm_baseline"``  — came from the LLM initial QS pass
+  ``"item_predictor"``       — added because Item Predictor predicted it and LLM confirmed it missing
+  ``"llm_gap_fill"``  — explicitly added during the LLM gap-fill comparison step
+"""
+from __future__ import annotations
+
 import re
 from typing import Any
 
-from services.item_gen_process.model_a_stub import get_sample_model_a_predictions
-from services.clarification_process.llm_client import refine_boq_items as llm_refine_boq_items
+from services.item_gen_process.item_predictor import predict_boq_items
+from services.clarification_process.llm_client import (
+    generate_baseline_boq,
+    gap_fill_boq_items,
+)
+from core.logging.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 _CATEGORY_RULES: list[tuple[str, str, str]] = [
@@ -17,75 +36,100 @@ _CATEGORY_RULES: list[tuple[str, str, str]] = [
     (r"\b(tap|waste|pipe|water closet|bidet|soap|toilet|basin|plumbing)\b", "plumbing", "Plumbing"),
     (r"\b(security|advance payment|preliminary|preliminaries)\b", "preliminaries", "Preliminaries"),
     (r"\b(staircase)\b", "structure", "Structure"),
+    (r"\b(waterproof)\b", "roof", "Roofing"),
 ]
 
 
-def build_boq_items(project_info: dict, floorplan_summary: dict | None = None) -> list[dict[str, Any]]:
-    floors = project_info.get("floors") or 1
-    raw_predictions = get_sample_model_a_predictions()
-    raw_items = [_normalize_prediction(item) for item in raw_predictions]
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
 
-    refined_items = _refine_items(project_info, raw_items)
-
-    for item in refined_items:
-        item["floors"] = floors
-        item["source"] = "model_a_stub"
-        if floorplan_summary:
-            item["floorplan"] = floorplan_summary.get("note")
-
-    return refined_items
-
-
-def _normalize_prediction(description: str) -> dict[str, Any]:
-    clean_description, bsr_ref = _split_bsr_reference(description)
-    return {
-        "description": clean_description,
-        "raw_description": description,
-        "predicted_bsr_ref": bsr_ref,
-    }
-
-
-def _split_bsr_reference(description: str) -> tuple[str, str | None]:
-    match = re.search(r"\(\s*bsr\s+([a-z0-9.]+)[^)]*\)", description, re.IGNORECASE)
-    bsr_ref = match.group(1).lower() if match else None
-    cleaned = re.sub(r"\s*\(\s*bsr[^)]*\)\s*", "", description, flags=re.IGNORECASE).strip()
-    return cleaned, bsr_ref
-
-
-def _refine_items(project_info: dict, raw_items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    try:
-        llm_items = llm_refine_boq_items(project_info, raw_items)
-    except Exception:
-        llm_items = []
-
-    if llm_items:
-        return _merge_refined_items(raw_items, llm_items)
-    return [_apply_rules(item) for item in raw_items]
-
-
-def _merge_refined_items(
-    raw_items: list[dict[str, Any]],
-    refined_items: list[dict[str, Any]],
+def build_final_boq_items(
+    project_info: dict,
+    floorplan_geometry: dict | None = None,
 ) -> list[dict[str, Any]]:
-    merged: list[dict[str, Any]] = []
-    for index, raw_item in enumerate(raw_items):
-        refined_item = refined_items[index] if index < len(refined_items) else None
-        if not refined_item:
-            merged.append(_apply_rules(raw_item))
-            continue
-        merged_item = dict(raw_item)
-        merged_item["description"] = refined_item.get("description") or raw_item.get("description")
-        merged_item["category"] = refined_item.get("category") or _infer_category(raw_item.get("description"))
-        merged_item["section"] = refined_item.get("section") or _infer_section(raw_item.get("description"))
-        merged.append(merged_item)
-    return merged
+    """Execute the three-stage BOQ generation and return a fully tagged item list.
+
+    Parameters
+    ----------
+    project_info:
+        Normalised project info dict from the clarification pipeline.
+    floorplan_geometry:
+        Optional geometry dict from the CV pipeline (used for future enrichment).
+
+    Returns
+    -------
+    list[dict]
+        Each dict has keys: description, category, section, source, floors.
+    """
+    floors = project_info.get("floors") or 1
+
+    # -----------------------------------------------------------------------
+    # Stage 1: LLM Initial QS Pass → baseline BOQ
+    # -----------------------------------------------------------------------
+    logger.info("boq_stage1_baseline_boq start")
+    try:
+        baseline_items = generate_baseline_boq(project_info)
+    except Exception:
+        logger.exception("boq_stage1_baseline_boq failed — using empty baseline")
+        baseline_items = []
+
+    for item in baseline_items:
+        item["source"] = "llm_baseline"
+    logger.info("boq_stage1_baseline_boq items=%d", len(baseline_items))
+
+    # -----------------------------------------------------------------------
+    # Stage 2: Item Predictor → additional candidate items
+    # -----------------------------------------------------------------------
+    logger.info("boq_stage2_item_predictor start")
+    try:
+        item_predictor_raw: list[str] = predict_boq_items(project_info)
+    except Exception:
+        logger.exception("boq_stage2_item_predictor failed — using empty predictions")
+        item_predictor_raw = []
+    logger.info("boq_stage2_item_predictor predictions=%d", len(item_predictor_raw))
+
+    # -----------------------------------------------------------------------
+    # Stage 3: LLM Gap Fill → compare & add only missing relevant items
+    # -----------------------------------------------------------------------
+    logger.info("boq_stage3_gap_fill start")
+    added_items: list[dict] = []
+    try:
+        added_items = gap_fill_boq_items(project_info, baseline_items, item_predictor_raw)
+    except Exception:
+        logger.exception("boq_stage3_gap_fill failed — skipping gap fill")
+
+    for item in added_items:
+        item["source"] = "llm_gap_fill"
+    logger.info("boq_stage3_gap_fill added=%d", len(added_items))
+
+    # -----------------------------------------------------------------------
+    # Merge into final list
+    # -----------------------------------------------------------------------
+    final_items: list[dict[str, Any]] = []
+    for item in baseline_items + added_items:
+        enriched = _enrich_item(item, floors)
+        final_items.append(enriched)
+
+    logger.info("boq_final items=%d", len(final_items))
+    return final_items
 
 
-def _apply_rules(item: dict[str, Any]) -> dict[str, Any]:
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+def _enrich_item(item: dict[str, Any], floors: int) -> dict[str, Any]:
+    """Ensure category/section are set and attach floors metadata."""
     enriched = dict(item)
-    description = item.get("description") or ""
-    enriched["category"] = _infer_category(description)
-    enriched["section"] = _infer_section(description)
+    description = enriched.get("description") or ""
+
+    if not enriched.get("category") or enriched.get("category") == "misc":
+        enriched["category"] = _infer_category(description)
+    if not enriched.get("section") or enriched.get("section") == "Miscellaneous":
+        enriched["section"] = _infer_section(description)
+
+    enriched["floors"] = floors
     return enriched
 
 

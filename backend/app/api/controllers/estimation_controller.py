@@ -150,6 +150,9 @@ async def _run_estimation_stream(session) -> None:
 
 
 def _build_progress_callback(session) -> callable:
+    import asyncio
+    loop = asyncio.get_event_loop()
+
     def _progress(step: str, status: str, data: dict | None) -> None:
         logger.info(
             "estimation_progress step=%s status=%s session_id=%s",
@@ -157,6 +160,11 @@ def _build_progress_callback(session) -> callable:
             status,
             session.session_id,
         )
+        event = {
+            "event": "progress",
+            "data": {"step": step, "status": status, **(data or {})},
+        }
+        asyncio.run_coroutine_threadsafe(session.queue.put(event), loop)
 
     return _progress
 

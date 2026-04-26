@@ -23,6 +23,7 @@ _SCHEMA_HINT = {
         "built_up_area": "string or null",
         "finish_level": "string or null",
         "roof_type": "string or null",
+        "ceiling_type": "string or null",
     },
     "explicit_parameters": "array of strings",
     "assumptions": "array of strings",
@@ -109,6 +110,49 @@ def refine_boq_items(project_info: dict, items: list[dict]) -> list[dict]:
     return _normalize_refined_boq(parsed)
 
 
+def generate_baseline_boq(project_info: dict) -> list[dict]:
+    """LLM Initial QS Pass — generate a baseline BOQ item list from project info."""
+    project_info_json = json.dumps(project_info, ensure_ascii=True)
+    prompt = _render_template("generate_baseline_boq.txt", project_info_json=project_info_json)
+    messages = [
+        {"role": "system", "content": _SYSTEM_PROMPT},
+        {"role": "user", "content": prompt},
+    ]
+    content = chat(messages, stream=False)
+    parsed = _safe_json_loads(content)
+    items = parsed.get("items") if isinstance(parsed, dict) else None
+    if not isinstance(items, list):
+        return []
+    return _normalize_boq_item_list(items)
+
+
+def gap_fill_boq_items(
+    project_info: dict,
+    baseline_items: list[dict],
+    item_predictor_items: list[str],
+) -> list[dict]:
+    """LLM Comparison & Gap Fill — add ONLY missing relevant items from Item Predictor."""
+    project_info_json = json.dumps(project_info, ensure_ascii=True)
+    baseline_json = json.dumps(baseline_items, ensure_ascii=True)
+    item_predictor_json = json.dumps(item_predictor_items, ensure_ascii=True)
+    prompt = _render_template(
+        "gap_fill_boq_items.txt",
+        project_info_json=project_info_json,
+        baseline_items_json=baseline_json,
+        item_predictor_items_json=item_predictor_json,
+    )
+    messages = [
+        {"role": "system", "content": _SYSTEM_PROMPT},
+        {"role": "user", "content": prompt},
+    ]
+    content = chat(messages, stream=False)
+    parsed = _safe_json_loads(content)
+    added = parsed.get("added_items") if isinstance(parsed, dict) else None
+    if not isinstance(added, list):
+        return []
+    return _normalize_boq_item_list(added)
+
+
 def _safe_json_loads(text: str) -> dict:
     try:
         return json.loads(text)
@@ -160,6 +204,25 @@ def _normalize_refined_boq(data: dict) -> list[dict]:
     return normalized
 
 
+def _normalize_boq_item_list(items: list) -> list[dict]:
+    """Shared normaliser for any LLM-returned list of BOQ item dicts."""
+    normalized: list[dict] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        description = _coerce_value(item.get("description"))
+        if not description:
+            continue
+        normalized.append(
+            {
+                "description": description,
+                "category": _coerce_value(item.get("category")) or "misc",
+                "section": _coerce_value(item.get("section")) or "Miscellaneous",
+            }
+        )
+    return normalized
+
+
 def _normalize_requirements_check(data: dict) -> dict:
     missing_fields = _coerce_list(data.get("missing_fields"))
     questions = _coerce_list(data.get("questions"))
@@ -180,6 +243,7 @@ def _normalize_parameters(parameters: dict[str, Any]) -> dict:
         "built_up_area": _coerce_value(parameters.get("built_up_area")),
         "finish_level": _coerce_value(parameters.get("finish_level")),
         "roof_type": _coerce_value(parameters.get("roof_type")),
+        "ceiling_type": _coerce_value(parameters.get("ceiling_type")),
     }
 
 

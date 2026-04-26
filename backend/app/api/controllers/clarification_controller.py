@@ -8,7 +8,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from core.logging.logger import get_logger
-from services.clarification_process.clarification_agent import build_clarification_questions, find_missing_fields
+from services.clarification_process.clarification_agent import build_clarification_questions, find_missing_fields, normalize_ceiling_type
 from services.clarification_process.llm_client import (
     extract_project_info,
     extract_project_info_with_clarifications,
@@ -295,6 +295,9 @@ async def _run_pipeline_and_complete(session, project_info: dict, floorplan_imag
 
 
 def _build_progress_callback(session) -> callable:
+    import asyncio
+    loop = asyncio.get_event_loop()
+
     def _progress(step: str, status: str, data: dict | None) -> None:
         logger.info(
             "clarification_progress step=%s status=%s session_id=%s",
@@ -302,6 +305,11 @@ def _build_progress_callback(session) -> callable:
             status,
             session.session_id,
         )
+        event = {
+            "event": "progress",
+            "data": {"step": step, "status": status, **(data or {})},
+        }
+        asyncio.run_coroutine_threadsafe(session.queue.put(event), loop)
 
     return _progress
 
@@ -355,6 +363,8 @@ def _apply_answer_to_project_info(project_info: dict, field: str, answer: str) -
         value = str(value)
     if field == "finish_level":
         value = _normalize_finish_level(answer)
+    if field == "ceiling_type":
+        value = normalize_ceiling_type(answer) or answer.strip().lower() or None
 
     if field == "floors":
         project_info["floors"] = value
@@ -399,7 +409,7 @@ def _get_project_info_value(project_info: dict, field: str) -> Any:
 
 
 def _merge_required_fields(target: dict, source: dict) -> None:
-    required_parameters = {"bedrooms", "bathrooms", "built_up_area", "finish_level", "roof_type"}
+    required_parameters = {"bedrooms", "bathrooms", "built_up_area", "finish_level", "roof_type", "ceiling_type"}
     if not target.get("floors") and source.get("floors"):
         target["floors"] = source.get("floors")
 
@@ -419,6 +429,7 @@ def _build_confirmation_summary(project_info: dict) -> str:
     built_up_area = parameters.get("built_up_area") or "unknown"
     finish_level = parameters.get("finish_level") or "unknown"
     roof_type = parameters.get("roof_type") or "unknown"
+    ceiling_type = parameters.get("ceiling_type") or "unknown"
     return (
         "Please confirm these details:\n"
         f"- Floors: {floors}\n"
@@ -427,6 +438,7 @@ def _build_confirmation_summary(project_info: dict) -> str:
         f"- Built-up area: {built_up_area}\n"
         f"- Finish level: {finish_level}\n"
         f"- Roof type: {roof_type}\n"
+        f"- Ceiling type: {ceiling_type}\n"
         "Reply with yes or no."
     )
 
