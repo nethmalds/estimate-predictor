@@ -1,27 +1,16 @@
 "use client";
 
 import { useState, FormEvent, useRef, useEffect, useCallback } from "react";
-import { useUploadThing } from "@/lib/uploadthing";
+import * as XLSX from "xlsx";
+import { uploadFiles, useUploadThing } from "@/lib/uploadthing";
 import {
   openClarificationStream,
   startClarificationSession,
   submitClarificationAnswer,
 } from "../services/estimation";
-
-// ─── Types ───────────────────────────────────────────────────────────────────
-
-type MessageRole = "user" | "assistant" | "info";
-
-type Message = {
-  role: MessageRole;
-  content: string;
-};
-
-type UploadState =
-  | { status: "idle" }
-  | { status: "uploading"; fileName: string; previewUrl: string | null }
-  | { status: "done"; fileName: string; previewUrl: string | null; url: string; fileKey: string }
-  | { status: "error"; message: string };
+import { Message, ExcelPreviewRow, UploadState } from "@/types/chat";
+import { ChatInput } from "@/components/chat/ChatInput";
+import { ChatMessage } from "@/components/chat/ChatMessage";
 
 // ─── BOQ formatter ───────────────────────────────────────────────────────────
 
@@ -72,30 +61,92 @@ function formatAssistantReply(result: unknown): string {
   }
 }
 
-// ─── Icons (inline SVG) ───────────────────────────────────────────────────────
+// ─── Excel generator (client-side, SheetJS) ───────────────────────────────────
 
-function PlusIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-    </svg>
-  );
-}
+function generateExcelReport(data: Record<string, unknown>): ArrayBuffer {
+  const wb = XLSX.utils.book_new();
+  const projectInfo = (data.project_info as Record<string, unknown>) || {};
+  const parameters  = (projectInfo.parameters as Record<string, unknown>) || {};
+  const costs       = (data.costs as Record<string, unknown>) || {};
+  const confidence  = (data.confidence as Record<string, unknown>) || {};
+  const boqItems    = (data.boq_items as Record<string, unknown>[]) || [];
 
-function SendIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <path d="M8 13V3M3 8l5-5 5 5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
+  // ── Sheet 1: Summary ────────────────────────────────────────────────────────
+  const summaryRows: unknown[][] = [
+    ["CONSTRUCTION COST ESTIMATION REPORT"],
+    [],
+    ["PROJECT DETAILS", ""],
+    ["Building Type",    projectInfo.building_type  || "—"],
+    ["Number of Floors", projectInfo.floors         || "—"],
+    ["Bedrooms",         parameters.bedrooms        || "—"],
+    ["Bathrooms",        parameters.bathrooms       || "—"],
+    ["Built-up Area",    parameters.built_up_area   || "—"],
+    ["Finish Level",     parameters.finish_level    || "—"],
+    ["Roof Type",        parameters.roof_type       || "—"],
+    ["Ceiling Type",     parameters.ceiling_type    || "—"],
+    [],
+    ["COST SUMMARY", ""],
+    ["Base Total (LKR)",   costs.base_total   ?? 0],
+    ["Contingencies (5%)", costs.contingencies ?? 0],
+    ["Grand Total (LKR)",  costs.total        ?? 0],
+    [],
+    ["ESTIMATE QUALITY", ""],
+    ["Confidence Score", `${((confidence.score as number || 0) * 100).toFixed(1)}%`],
+    ["Total BOQ Items",  boqItems.length],
+  ];
+  const summarySheet = XLSX.utils.aoa_to_sheet(summaryRows);
+  summarySheet["!cols"] = [{ wch: 30 }, { wch: 42 }];
+  XLSX.utils.book_append_sheet(wb, summarySheet, "Summary");
 
-function NewChatIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-      <path d="M7 2v10M2 7h10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-    </svg>
-  );
+  // ── Sheet 2: Bill of Quantities ─────────────────────────────────────────────
+  const boqHeaders = ["No.", "Description", "Category", "Unit", "Quantity", "Rate (LKR)", "Cost (LKR)", "BSR Code", "Match %"];
+  const boqRows: unknown[][] = [boqHeaders];
+  for (let i = 0; i < boqItems.length; i++) {
+    const item = boqItems[i];
+    const conf = item.match_confidence as number | undefined;
+    boqRows.push([
+      i + 1,
+      item.description || item.bsr_description || "—",
+      item.section || item.category || "Uncategorized",
+      item.unit || "—",
+      item.quantity ?? 0,
+      item.rate ?? 0,
+      item.cost ?? 0,
+      item.bsr_item_no || "—",
+      conf != null ? `${(conf * 100).toFixed(0)}%` : "—",
+    ]);
+  }
+  boqRows.push([]);
+  boqRows.push(["", "", "", "", "", "GRAND TOTAL (incl. 5% Contingencies)", costs.total ?? 0, "", ""]);
+  const boqSheet = XLSX.utils.aoa_to_sheet(boqRows);
+  boqSheet["!cols"] = [
+    { wch: 6 }, { wch: 48 }, { wch: 26 }, { wch: 10 },
+    { wch: 12 }, { wch: 16 }, { wch: 16 }, { wch: 18 }, { wch: 10 },
+  ];
+  XLSX.utils.book_append_sheet(wb, boqSheet, "Bill of Quantities");
+
+  // ── Sheet 3: Cost Breakdown ─────────────────────────────────────────────────
+  const subtotals = (costs.subtotals as Record<string, number>) || {};
+  const baseTotal  = (costs.base_total as number) || 1;
+  const breakdownRows: unknown[][] = [["Category", "Subtotal (LKR)", "% of Base Total"]];
+  Object.entries(subtotals)
+    .sort(([, a], [, b]) => b - a)
+    .forEach(([cat, amount]) => {
+      breakdownRows.push([
+        cat.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
+        amount,
+        `${((amount / baseTotal) * 100).toFixed(1)}%`,
+      ]);
+    });
+  breakdownRows.push([]);
+  breakdownRows.push(["Base Total",         costs.base_total   ?? 0, "100%"]);
+  breakdownRows.push(["Contingencies (5%)", costs.contingencies ?? 0, ""]);
+  breakdownRows.push(["Grand Total",        costs.total        ?? 0, ""]);
+  const breakdownSheet = XLSX.utils.aoa_to_sheet(breakdownRows);
+  breakdownSheet["!cols"] = [{ wch: 36 }, { wch: 20 }, { wch: 16 }];
+  XLSX.utils.book_append_sheet(wb, breakdownSheet, "Cost Breakdown");
+
+  return XLSX.write(wb, { bookType: "xlsx", type: "array" }) as ArrayBuffer;
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
@@ -256,15 +307,50 @@ export default function Home() {
 
       source.addEventListener("completed", (event) => {
         streamCompleted = true;
-        const data = JSON.parse((event as MessageEvent).data) as unknown;
-        setMessages((prev) => [
-          ...prev,
-          { role: "assistant", content: formatAssistantReply(data) },
-        ]);
+        const data = JSON.parse((event as MessageEvent).data) as Record<string, unknown>;
+
         setClarificationSessionId(null);
         setCurrentQuestion(null);
         setIsLoading(false);
         source.close();
+
+        // Build preview rows (first 5 BOQ items)
+        const boqItems = (data.boq_items as Record<string, unknown>[]) || [];
+        const preview: ExcelPreviewRow[] = boqItems.slice(0, 5).map((item) => ({
+          description: String(item.description || item.bsr_description || "—"),
+          unit:        String(item.unit || "—"),
+          quantity:    Number(item.quantity ?? 0),
+          rate:        Number(item.rate ?? 0),
+          cost:        Number(item.cost ?? 0),
+        }));
+        const costs = (data.costs as Record<string, unknown>) || {};
+        const excelTotal = Number(costs.total ?? 0);
+
+        // Generate Excel and upload to UploadThing asynchronously
+        void (async () => {
+          try {
+            const excelBuffer = generateExcelReport(data);
+            const blob = new Blob([excelBuffer], {
+              type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            });
+            const fileName = `estimate_${new Date().toISOString().slice(0, 10)}.xlsx`;
+            const file = new File([blob], fileName, { type: blob.type });
+            const [uploaded] = await uploadFiles("excelUploader", { files: [file] });
+            setMessages((prev) => [
+              ...prev,
+              {
+                role: "excel",
+                content: "Your cost estimate is ready as an Excel report.",
+                excelUrl: uploaded.ufsUrl,
+                fileName,
+                excelPreview: preview,
+                excelTotal,
+              },
+            ]);
+          } catch (err) {
+            console.error("Excel generation or upload failed:", err);
+          }
+        })();
       });
 
       source.addEventListener("info", (event) => {
@@ -344,206 +430,73 @@ export default function Home() {
     if (textareaRef.current) textareaRef.current.style.height = "auto";
   };
 
-  const canSend = input.trim().length > 0 && !isLoading && !isUploading;
+  useEffect(() => {
+    const handleSidebarNewChat = () => {
+      handleNewChat();
+    };
 
-  // ─── Render ────────────────────────────────────────────────────────────────
+    window.addEventListener("chat:new", handleSidebarNewChat);
+    return () => window.removeEventListener("chat:new", handleSidebarNewChat);
+  }, [handleNewChat]);
+
   return (
-    <div className="app-shell">
-      {/* ── Sidebar ─────────────────────────────────────────────────────── */}
-      <aside className="sidebar" aria-label="Sidebar">
-        <div className="sidebar-logo">
-          <div className="sidebar-logo-icon" aria-hidden="true">E</div>
-          <div>
-            <div className="sidebar-logo-text">EstimateAI</div>
-            <div className="sidebar-logo-sub">Construction Estimator</div>
-          </div>
+    <div className="flex flex-1 flex-col bg-[#212121]">
+      {/* Message list */}
+      <main className="flex-1 max-w-5xl mx-auto overflow-y-auto py-6 pb-2" aria-label="Conversation">
+        <div className="px-6 flex flex-col">
+          {messages.map((msg, idx) => (
+            <ChatMessage key={idx} msg={msg} />
+          ))}
+
+          {/* Typing indicator */}
+          {isLoading && (
+            <div
+              className="flex items-center gap-3 py-1 pb-3"
+              aria-label="Assistant is typing"
+              role="status"
+            >
+              <div
+                className="w-8 h-8 rounded-full flex items-center justify-center text-[13px] font-bold text-white shrink-0 shadow-sm"
+                style={{ background: "linear-gradient(135deg, #18181b, #09090b)" }}
+                aria-hidden="true"
+              >
+                E
+              </div>
+              <div className="flex gap-1 items-center" aria-hidden="true">
+                <span className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-dot-pulse" />
+                <span className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-dot-pulse [animation-delay:0.2s]" />
+                <span className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-dot-pulse [animation-delay:0.4s]" />
+              </div>
+            </div>
+          )}
+
+          <div ref={messagesEndRef} aria-hidden="true" />
         </div>
+      </main>
 
-        <button
-          id="new-chat-btn"
-          className="new-chat-btn"
-          onClick={handleNewChat}
-          aria-label="Start a new chat"
-        >
-          <NewChatIcon />
-          New Chat
-        </button>
-
-        <div className="sidebar-section-title">Recent</div>
-        <div className="sidebar-chat-item" aria-hidden="true">Project estimation session</div>
-        <div className="sidebar-chat-item" aria-hidden="true">BOQ generation</div>
-        <div className="sidebar-chat-item" aria-hidden="true">Floor plan analysis</div>
-      </aside>
-
-      {/* ── Chat area ────────────────────────────────────────────────────── */}
-      <div className="chat-area">
-        {/* Message list */}
-        <main className="messages-list" id="messages-list" aria-label="Conversation">
-          <div className="messages-inner">
-            {messages.map((msg, idx) => {
-              if (msg.role === "info") {
-                return (
-                  <div key={idx} className="message-row message-row--info" role="status">
-                    <div className="message-bubble--info">{msg.content}</div>
-                  </div>
-                );
-              }
-
-              if (msg.role === "user") {
-                return (
-                  <div key={idx} className="message-row message-row--user">
-                    <div className="message-bubble--user" aria-label="Your message">
-                      {msg.content}
-                    </div>
-                  </div>
-                );
-              }
-
-              // assistant
-              return (
-                <div key={idx} className="message-row message-row--assistant">
-                  <div className="assistant-avatar" aria-hidden="true">E</div>
-                  <div className="message-bubble--assistant" aria-label="Assistant response">
-                    {msg.content}
-                  </div>
-                </div>
-              );
-            })}
-
-            {/* Typing indicator */}
-            {isLoading && (
-              <div className="typing-indicator" aria-label="Assistant is typing" role="status">
-                <div className="assistant-avatar" aria-hidden="true">E</div>
-                <div className="typing-dots" aria-hidden="true">
-                  <div className="typing-dot" />
-                  <div className="typing-dot" />
-                  <div className="typing-dot" />
-                </div>
-              </div>
-            )}
-
-            <div ref={messagesEndRef} aria-hidden="true" />
-          </div>
-        </main>
-
-        {/* Input composer */}
-        <div className="composer-wrapper">
-          <div className="composer-inner">
-            <form onSubmit={handleSubmit} aria-label="Send a message">
-              <div className="composer-box">
-                {/* Upload chip (shown when file attached) */}
-                {uploadState.status !== "idle" && uploadState.status !== "error" && (
-                  <div className="chip-row">
-                    <div className="upload-chip" role="status" aria-label="Attached file">
-                      {uploadState.previewUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={uploadState.previewUrl}
-                          alt="Floor plan preview"
-                          className="chip-thumb"
-                        />
-                      ) : (
-                        <div className="chip-thumb-placeholder" aria-hidden="true">📄</div>
-                      )}
-                      <span className="chip-name">{uploadState.fileName}</span>
-                      {uploadState.status === "uploading" && (
-                        <div className="chip-spinner" aria-label="Uploading..." />
-                      )}
-                      {uploadState.status === "done" && (
-                        <span className="chip-status">✓</span>
-                      )}
-                      <button
-                        type="button"
-                        className="chip-clear"
-                        onClick={() => clearUpload(true)}
-                        aria-label="Remove attachment"
-                        disabled={uploadState.status === "uploading"}
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {uploadState.status === "error" && (
-                  <div className="chip-row">
-                    <span style={{ fontSize: 12, color: "#e06c75" }}>
-                      ⚠ {uploadState.message}
-                    </span>
-                  </div>
-                )}
-
-                {/* Textarea row */}
-                <div className="composer-row">
-                  {/* Hidden file input */}
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*,.pdf"
-                    onChange={handleFileChange}
-                    style={{ display: "none" }}
-                    id="floor-plan-file-input"
-                    aria-label="Upload floor plan"
-                    disabled={isLoading || Boolean(clarificationSessionId)}
-                  />
-
-                  {/* + Upload button */}
-                  <button
-                    type="button"
-                    id="upload-floor-plan-btn"
-                    className="upload-btn"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={
-                      isLoading ||
-                      Boolean(clarificationSessionId) ||
-                      uploadState.status === "uploading"
-                    }
-                    aria-label="Attach floor plan image"
-                    title="Attach floor plan"
-                  >
-                    <PlusIcon />
-                  </button>
-
-                  {/* Textarea */}
-                  <textarea
-                    ref={textareaRef}
-                    id="message-input"
-                    className="composer-textarea"
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    onInput={resizeTextarea}
-                    placeholder={
-                      currentQuestion
-                        ? "Type your answer…"
-                        : "Describe your project…"
-                    }
-                    disabled={isLoading}
-                    rows={1}
-                    aria-label="Message input"
-                    aria-multiline="true"
-                  />
-
-                  {/* Send button */}
-                  <button
-                    type="submit"
-                    id="send-message-btn"
-                    className="send-btn"
-                    disabled={!canSend}
-                    aria-label="Send message"
-                    title="Send (Enter)"
-                  >
-                    <SendIcon />
-                  </button>
-                </div>
-              </div>
-            </form>
-
-            <p className="composer-hint">
-              Press <kbd style={{ fontFamily: "monospace" }}>Enter</kbd> to send ·{" "}
-              <kbd style={{ fontFamily: "monospace" }}>Shift+Enter</kbd> for a new line
-            </p>
-          </div>
+      {/* Input composer */}
+      <div className="px-6 pb-5 pt-3">
+        <div className="w-full">
+          <ChatInput
+            input={input}
+            setInput={setInput}
+            isLoading={isLoading}
+            isUploading={isUploading}
+            uploadState={uploadState}
+            clarificationSessionId={clarificationSessionId}
+            currentQuestion={currentQuestion}
+            textareaRef={textareaRef}
+            fileInputRef={fileInputRef}
+            handleSubmit={handleSubmit}
+            handleKeyDown={handleKeyDown}
+            handleFileChange={handleFileChange}
+            clearUpload={clearUpload}
+            resizeTextarea={resizeTextarea}
+          />
+          <p className="text-xs text-zinc-500 text-center mt-2">
+            Press <kbd className="font-mono">Enter</kbd> to send ·{" "}
+            <kbd className="font-mono">Shift+Enter</kbd> for a new line
+          </p>
         </div>
       </div>
     </div>

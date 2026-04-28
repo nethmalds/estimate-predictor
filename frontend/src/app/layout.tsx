@@ -1,6 +1,10 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Inter, Geist } from "next/font/google";
 import "./globals.css";
+import { cn } from "@/lib/utils";
+import { ChatLayout } from "@/components/chat/ChatLayout";
+
+const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
 const inter = Inter({
   subsets: ["latin"],
@@ -19,9 +23,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${inter.className} h-full`} style={{ background: "#212121" }}>
-      <body className="h-full" style={{ background: "#212121" }}>
-        {children}
+    <html lang="en" className={cn("h-full", inter.className, "font-sans", geist.variable)}>
+      <body className="h-full bg-foreground">
+        <ChatLayout>{children}</ChatLayout>
       </body>
     </html>
   );
