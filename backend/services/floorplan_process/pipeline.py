@@ -22,6 +22,7 @@ from services.floorplan_process.geometry_extraction.geometry_extractor import (
     extract_room_boundaries,
     preprocess_image,
 )
+from services.floorplan_process.image_cache import download_and_cache
 from services.floorplan_process.service import service
 from core.logging.logger import get_logger
 
@@ -32,7 +33,16 @@ _DEFAULT_FLOOR_HEIGHT_M = 3.0
 
 
 def run_floorplan_pipeline(image_path: str) -> dict:
-    """Run the full CV pipeline on *image_path* and return a geometry dict."""
+    """Run the full CV pipeline on *image_path* (local path or remote URL).
+
+    If *image_path* is an http(s) URL it is downloaded and cached locally
+    using ``image_cache.download_and_cache`` before processing.
+    """
+    # ── Resolve remote URL to local path ────────────────────────────────────
+    if image_path.startswith(("http://", "https://")):
+        logger.info("floorplan_pipeline resolving remote url=%s", image_path)
+        image_path = download_and_cache(image_path)
+
     logger.info("floorplan_pipeline start image_path=%s", image_path)
 
     preprocess = preprocess_image(image_path)

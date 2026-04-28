@@ -51,26 +51,26 @@ def calculate_from_geometry(
 
     # --- Per-category rules ----------------------------------------------
 
-    if category == "preliminaries":
+    if category == "preliminary_and_general":
         # Always 1 (lump sum item — not geometry-driven)
         return 1.0, "rule_based"
 
-    if category == "site":
+    if category in ("excavation_and_earthwork", "demolition_and_removal"):
         if area_m2 > 0:
             return round(area_m2 * 1.15, 2), "geometry"   # 15% clearance margin
         return None, None
 
-    if category == "foundation":
+    if category == "piling_and_substructure":
         if area_m2 > 0:
             return round(area_m2 * floor_count * 0.6, 2), "rule_based"
         return None, None
 
-    if category == "structure":
+    if category in ("concrete_works", "formwork", "reinforcement"):
         if area_m2 > 0:
             return round(area_m2 * floor_count * 0.75, 2), "rule_based"
         return None, None
 
-    if category == "masonry":
+    if category == "brick_masonry":
         if wall_length_m > 0:
             # Both sides of wall, minus openings (each ~2 m²)
             opening_area = opening_count * 2.0
@@ -80,7 +80,7 @@ def calculate_from_geometry(
             return round(area_m2 * floor_count * 0.65, 2), "rule_based"
         return None, None
 
-    if category == "finishes":
+    if category in ("plastering_and_rendering", "painting_and_finishes"):
         if wall_length_m > 0:
             # Both sides of all walls, two coats
             return round(wall_length_m * floor_height * floor_count * 2, 2), "geometry"
@@ -88,30 +88,35 @@ def calculate_from_geometry(
             return round(area_m2 * floor_count * 1.1, 2), "rule_based"
         return None, None
 
-    if category == "roof":
+    if category == "flooring_and_tiling":
+        if area_m2 > 0:
+            return round(area_m2 * floor_count * 1.05, 2), "geometry" # 5% waste
+        return None, None
+
+    if category == "roofing_and_ceiling":
         if area_m2 > 0:
             return round(area_m2 * 1.05, 2), "geometry"
         return None, None
 
-    if category == "openings":
+    if category == "doors_windows_and_glazing":
         if opening_count > 0:
             return float(opening_count), "geometry"
         # Fallback estimate
         qty = max((bedrooms * 2.0) + (bathrooms * 1.5) + 2.0, 4.0)
         return round(qty, 2), "rule_based"
 
-    if category == "electrical":
+    if category == "electrical_and_mechanical":
         if area_m2 > 0:
             # ~1 light/socket per 15 m² per floor
             return round(max((area_m2 / 15.0) * floor_count, 6.0), 2), "rule_based"
         return None, None
 
-    if category == "plumbing":
+    if category == "sanitary_and_plumbing":
         # Plumbing is fixtures-driven, not area-driven
         qty = max((bathrooms * 4.0) + (bedrooms * 1.5), 4.0)
         return round(qty, 2), "rule_based"
 
-    if category == "external":
+    if category == "external_and_civil_works":
         if area_m2 > 0:
             return round(area_m2 * 0.25, 2), "rule_based"
         return None, None

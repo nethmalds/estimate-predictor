@@ -4,20 +4,8 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
-from core.config.settings import settings
-from core.logging.logger import get_logger, setup_logging
-
-
-_logging_initialized = False
+from core.logging.logger import ensure_logging, get_logger
 logger = get_logger(__name__)
-
-
-def _ensure_logging() -> None:
-    global _logging_initialized
-    if _logging_initialized:
-        return
-    setup_logging(settings.log_level, settings.log_file)
-    _logging_initialized = True
 
 
 @dataclass
@@ -42,7 +30,7 @@ _SESSION_TTL_SECONDS = 3600  # 1 hour
 
 class ProcessSessionStore:
     def __init__(self) -> None:
-        _ensure_logging()
+        ensure_logging()
         self._sessions: dict[str, ProcessSession] = {}
         self._lock = asyncio.Lock()
         self._cleanup_task: asyncio.Task | None = None
@@ -74,7 +62,7 @@ class ProcessSessionStore:
         questions: list[str] | None = None,
         session_type: str = "clarification",
     ) -> ProcessSession:
-        _ensure_logging()
+        ensure_logging()
         session_id = uuid.uuid4().hex
         session = ProcessSession(
             session_id=session_id,

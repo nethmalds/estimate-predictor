@@ -131,7 +131,7 @@ def _resolve_quantity_predictor_items(items_to_resolve: list[dict], project_info
     Preliminaries and misc items are lump-sum by QS convention and are assigned
     quantity = 1.0 directly without passing through the ML model.
     """
-    _LUMP_SUM_CATEGORIES = {"preliminaries", "misc"}
+    _LUMP_SUM_CATEGORIES = {"preliminary_and_general", "miscellaneous", "other", "testing_and_commissioning"}
 
     distribution_groups: dict[str, list[dict]] = {}
 
@@ -185,53 +185,61 @@ def _get_qs_weight(category: str, description: str) -> float:
     desc = str(description).lower()
 
     QS_RULES = {
-        "structure": [
+        "concrete_works": [
             ("slab", 40.0), ("beam", 25.0), ("column", 20.0), ("stair", 15.0),
-            ("lintel", 5.0), ("reinforcement", 30.0), ("formwork", 30.0),
-            ("grade 20", 35.0), ("grade 25", 35.0), ("concrete", 30.0),
-            ("tor steel", 30.0), ("mild steel", 25.0), ("brc mesh", 20.0),
+            ("lintel", 5.0), ("grade 20", 35.0), ("grade 25", 35.0), ("concrete", 30.0),
         ],
-        "masonry": [
+        "formwork": [
+            ("formwork", 30.0), ("shuttering", 30.0), ("mould", 10.0),
+        ],
+        "reinforcement": [
+            ("reinforcement", 30.0), ("tor steel", 30.0), ("mild steel", 25.0), ("brc mesh", 20.0),
+        ],
+        "brick_masonry": [
             ("9", 70.0), ("225", 70.0), ("4.5", 30.0), ("112", 30.0),
             ("brick", 50.0), ("block", 50.0),
         ],
-        "finishes": [
-            ("floor", 50.0), ("wall", 40.0), ("internal", 30.0), ("external", 20.0),
-            ("ceiling", 10.0), ("soffit", 10.0), ("skirting", 10.0),
-            ("plaster", 40.0), ("render", 35.0), ("skim", 30.0),
-            ("paint", 30.0), ("tile", 50.0),
-            ("wax", 10.0), ("preserv", 10.0), ("emulsion", 25.0),
-            ("primer", 20.0), ("enamel", 15.0), ("weathershield", 20.0),
-            ("woodwork", 15.0), ("steelwork", 10.0), ("grille", 10.0),
+        "flooring_and_tiling": [
+            ("floor", 50.0), ("tile", 50.0), ("skirting", 10.0),
         ],
-        "roof": [
+        "plastering_and_rendering": [
+            ("plaster", 40.0), ("render", 35.0), ("skim", 30.0), ("wall", 40.0), ("internal", 30.0), ("external", 20.0),
+        ],
+        "painting_and_finishes": [
+            ("paint", 30.0), ("emulsion", 25.0), ("primer", 20.0), ("enamel", 15.0), ("weathershield", 20.0),
+            ("wax", 10.0), ("preserv", 10.0), ("woodwork", 15.0), ("steelwork", 10.0), ("grille", 10.0),
+        ],
+        "roofing_and_ceiling": [
             ("timber", 50.0), ("framework", 50.0), ("tile", 40.0), ("sheet", 40.0),
             ("ridge", 5.0), ("valance", 5.0), ("gutter", 5.0), ("downpipe", 5.0),
-            ("asbestos", 40.0),
+            ("asbestos", 40.0), ("ceiling", 10.0), ("soffit", 10.0),
         ],
-        "plumbing": [
+        "sanitary_and_plumbing": [
             ("water closet", 20.0), ("wc", 20.0), ("pipe", 20.0), ("shower", 15.0),
             ("basin", 15.0), ("sink", 10.0), ("tank", 10.0), ("tap", 5.0),
             ("gully", 5.0),
         ],
-        "electrical": [
+        "electrical_and_mechanical": [
             ("light", 30.0), ("socket", 25.0), ("cable", 15.0), ("wire", 15.0),
             ("switch", 10.0), ("fan", 10.0), ("distribution board", 5.0),
             ("db", 5.0), ("floodlight", 20.0), ("led", 15.0),
         ],
-        "foundation": [
+        "piling_and_substructure": [
             ("excavat", 40.0), ("footing", 40.0), ("foundation", 40.0), ("rubble", 30.0),
             ("backfill", 30.0), ("earth", 30.0), ("concrete", 20.0), ("screed", 15.0),
             ("pcc", 15.0), ("sand", 15.0), ("river sand", 18.0),
             ("cement pot", 10.0),
         ],
-        "site": [
+        "excavation_and_earthwork": [
             ("clear", 50.0), ("excavat", 50.0), ("trench", 40.0), ("transport", 20.0),
         ],
-        "openings": [
+        "external_and_civil_works": [
+            ("paving", 30.0), ("fence", 30.0), ("gate", 20.0), ("road", 20.0),
+        ],
+        "doors_windows_and_glazing": [
             ("window", 40.0), ("casement", 40.0), ("glaz", 35.0), ("door", 35.0),
         ],
-        "demolitions": [
+        "demolition_and_removal": [
             ("brick wall", 50.0), ('9" brick', 50.0), ("drain", 30.0),
             ("demolit", 40.0), ("remov", 30.0),
         ],

@@ -8,8 +8,10 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from core.logging.logger import get_logger
-from services.clarification_process.clarification_agent import build_clarification_questions, find_missing_fields, normalize_ceiling_type
-from services.clarification_process.llm_client import (
+from services.clarification_process.service import (
+    build_clarification_questions,
+    find_missing_fields,
+    normalize_ceiling_type,
     extract_project_info,
     extract_project_info_with_clarifications,
 )
@@ -296,9 +298,13 @@ async def _run_pipeline_and_complete(session, project_info: dict, floorplan_imag
 
 def _build_progress_callback(session) -> callable:
     import asyncio
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
 
     def _progress(step: str, status: str, data: dict | None) -> None:
+        # "dev_log" events carry large data dumps — they go to payloads.log only,
+        # never over SSE to the client.
+        if status == "dev_log":
+            return
         logger.info(
             "clarification_progress step=%s status=%s session_id=%s",
             step,
@@ -321,7 +327,11 @@ async def _queue_progress(session, step: str, status: str, data: dict | None) ->
         status,
         session.session_id,
     )
-
+    event = {
+        "event": "progress",
+        "data": {"step": step, "status": status, **(data or {})},
+    }
+    await session.queue.put(event)
 
 async def stream_clarification(session_id: str):
     session = await process_store.get_session(session_id)

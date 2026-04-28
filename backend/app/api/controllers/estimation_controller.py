@@ -9,9 +9,13 @@ from pydantic import BaseModel, Field
 
 from core.logging.logger import get_logger
 from services.rag_process.service import service
+from services.rag_process.retriever import retrieve_candidates, extract_query_features, clean_boq_query
+from services.rag_process.scorer import score_candidate
 from infrastructure.data_layer.vector_db.chroma_connection import get_chroma_collection_dependency
 from application.pipelines.estimation_pipeline import run_estimation_pipeline
 from app.api.state.session import process_store
+from core.config.settings import settings
+from infrastructure.data_layer.database.session import SessionLocal
 
 
 class MatchRequest(BaseModel):
@@ -25,6 +29,11 @@ class IngestRequest(BaseModel):
 class EstimationStreamStartRequest(BaseModel):
     description: str = Field(..., min_length=5)
     floorplan_image_url: str | None = None
+
+
+class DiagnoseRequest(BaseModel):
+    descriptions: list[str] = Field(..., min_length=1)
+    top_k: int = Field(default=5, ge=1, le=20)
 
 
 logger = get_logger(__name__)
@@ -43,6 +52,73 @@ def ingest_bsr(payload: IngestRequest):
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+def diagnose_bsr(payload: DiagnoseRequest):
+    """Diagnostic endpoint: returns top BSR candidates + raw scores for each BOQ description.
+
+    POST /api/rag/diagnose
+    Body: { "descriptions": ["...", "..."], "top_k": 5 }
+    Response: list of { description, cleaned_text, top_candidates: [{item_no, description, vector_score,
+                keyword_score, final_score, match_type}] }
+    """
+    results = []
+    try:
+        with SessionLocal() as db:
+            for desc in payload.descriptions:
+                query_features = extract_query_features(desc)
+                cleaned_text = clean_boq_query(query_features.normalized_text)
+
+                query_features_obj, candidates = retrieve_candidates(
+                    boq_text=desc,
+                    session=db,
+                    vector_store=service._get_vector_store(),
+                    embedder=service._get_embedder(),
+                    top_k=payload.top_k,
+                )
+
+                scored_candidates = []
+                for cand in candidates:
+                    bsr_item = cand["bsr_item"]
+                    scores = score_candidate(query_features_obj, bsr_item, cand["vector_score"])
+                    SOFT = 0.30
+                    CONFIRM = settings.min_confidence_threshold
+                    fs = scores["final_score"]
+                    if fs < SOFT:
+                        mt = "no_match"
+                    elif fs < CONFIRM:
+                        mt = "soft_match"
+                    else:
+                        mt = "confirmed"
+                    scored_candidates.append(
+                        {
+                            "item_no": bsr_item.item_no,
+                            "bsr_description": bsr_item.description,
+                            "unit": bsr_item.unit,
+                            "rate": bsr_item.rate,
+                            "vector_score": scores["vector_score"],
+                            "keyword_score": scores["keyword_score"],
+                            "final_score": scores["final_score"],
+                            "match_type": mt,
+                            "matched_fields": scores["matched_fields"],
+                        }
+                    )
+
+                scored_candidates.sort(key=lambda x: x["final_score"], reverse=True)
+
+                results.append(
+                    {
+                        "description": desc,
+                        "cleaned_text": cleaned_text,
+                        "detected_work_type": query_features.work_type,
+                        "detected_material": query_features.material,
+                        "top_candidates": scored_candidates,
+                    }
+                )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    return {"count": len(results), "results": results}
 
 
 async def start_estimation_stream(payload: EstimationStreamStartRequest):
@@ -154,6 +230,10 @@ def _build_progress_callback(session) -> callable:
     loop = asyncio.get_event_loop()
 
     def _progress(step: str, status: str, data: dict | None) -> None:
+        # "dev_log" events carry large data dumps — they go to payloads.log only,
+        # never over SSE to the client.
+        if status == "dev_log":
+            return
         logger.info(
             "estimation_progress step=%s status=%s session_id=%s",
             step,

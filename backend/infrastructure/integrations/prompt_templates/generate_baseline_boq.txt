@@ -6,6 +6,9 @@ List ONLY the work sections and items that are strictly necessary and explicitly
 Project Information:
 $project_info_json
 
+Item Predictor Hints (machine learning predicted work items — use as guidance for coverage, not as a mandatory list):
+$item_predictor_hints_json
+
 Return a JSON object with this exact schema:
 {
   "items": [
