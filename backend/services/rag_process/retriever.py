@@ -22,9 +22,48 @@ NOISE_WORDS = {
     "per",
 }
 
-WORK_TYPES = ["excavation", "concrete", "masonry", "plaster", "reinforcement", "flooring"]
-METHODS = ["manual", "machine", "ready-mix"]
-MATERIAL_HINTS = ["ordinary soil", "hard soil", "rock", "m20", "m25", "brick", "sand"]
+WORK_TYPES = [
+    # original
+    "excavation", "concrete", "masonry", "plaster", "reinforcement", "flooring",
+    # expanded
+    "formwork", "roofing", "painting", "plumbing", "electrical", "ceiling",
+    "tiling", "glazing", "drainage", "waterproofing", "carpentry", "metalwork",
+    "rendering", "backfilling", "compaction", "brickwork", "blockwork",
+]
+
+METHODS = ["manual", "machine", "ready-mix", "mechanical", "hand", "precast"]
+
+MATERIAL_HINTS = [
+    # original
+    "ordinary soil", "hard soil", "rock", "m20", "m25", "brick", "sand",
+    # pipes & drainage
+    "upvc", "pvc", "hdpe",
+    # roofing / ceilings
+    "zinc alum", "zinc aluminium", "corrugated", "purlin", "sleeper",
+    "angle iron", "gi sheet",
+    # finishes
+    "vinyl", "ceramic", "porcelain", "skim coat", "masonry paint",
+    # doors / windows
+    "hollow-core", "flush door", "casement", "plywood",
+    # sanitary
+    "chromium plated", "pillar tap", "sanitary ware",
+    # structural
+    "b.r.c", "brc", "tor steel", "high yield",
+    # misc
+    "wrought iron", "steel prop",
+]
+
+# Regex that strips the common BOQ boilerplate prefix from descriptions before
+# computing the embedding, e.g. "Supply and fix 5 nos. " → ""
+_QUANTITY_PREFIX = re.compile(
+    r"^(?:supply\s+and\s+fix\s+)?(?:\d+\s+nos?\.?\s+)?",
+    re.IGNORECASE,
+)
+
+
+def clean_boq_query(text: str) -> str:
+    """Remove quantity/count boilerplate so the embedding focuses on the work."""
+    return _QUANTITY_PREFIX.sub("", text).strip()
 
 
 @dataclass(frozen=True)
@@ -80,7 +119,9 @@ def retrieve_candidates(
     top_k: int = 5,
 ) -> tuple[QueryFeatures, list[dict]]:
     query_features = extract_query_features(boq_text)
-    query_embedding = embedder.embed_one(query_features.normalized_text)
+    # Strip boilerplate prefix before embedding so vectors focus on actual work
+    cleaned_text = clean_boq_query(query_features.normalized_text)
+    query_embedding = embedder.embed_one(cleaned_text or query_features.normalized_text)
 
     where = None
     if query_features.work_type:

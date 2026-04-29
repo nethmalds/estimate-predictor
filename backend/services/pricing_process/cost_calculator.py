@@ -1,3 +1,8 @@
+from core.logging.logger import get_logger
+
+logger = get_logger(__name__)
+
+
 def calculate_costs(items: list[dict], contingencies_rate: float = 0.05) -> dict:
     subtotals: dict[str, float] = {}
     detailed: list[dict] = []
@@ -16,6 +21,13 @@ def calculate_costs(items: list[dict], contingencies_rate: float = 0.05) -> dict
     contingencies = base_total * contingencies_rate
     total = base_total + contingencies
 
+    logger.info(
+        "cost_calculation items=%d base_total=%.2f contingencies=%.2f total=%.2f",
+        len(items),
+        base_total,
+        contingencies,
+        total,
+    )
     return {
         "subtotals": subtotals,
         "base_total": base_total,

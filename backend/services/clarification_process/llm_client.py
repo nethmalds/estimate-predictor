@@ -4,7 +4,10 @@ from pathlib import Path
 from string import Template
 from typing import Any
 
-from infrastructure.integrations.ollama_client import chat
+from core.logging.logger import get_logger
+from infrastructure.integrations.openrouter_client import chat
+
+logger = get_logger(__name__)
 
 
 _SYSTEM_PROMPT = (
@@ -29,7 +32,10 @@ _SCHEMA_HINT = {
     "assumptions": "array of strings",
 }
 
-_TEMPLATE_DIR = Path(__file__).resolve().parent / "prompt_templates"
+_TEMPLATE_DIR = (
+    Path(__file__).resolve().parents[2]
+    / "infrastructure" / "integrations" / "prompt_templates"
+)
 _TEMPLATE_CACHE: dict[str, str] = {}
 
 
@@ -48,6 +54,7 @@ def _render_template(name: str, **kwargs: str) -> str:
 
 
 def extract_project_info(description: str) -> dict:
+    logger.info("llm_call fn=extract_project_info desc_len=%d", len(description))
     prompt = _render_template("extract_project_info.txt", description=description)
     messages = [
         {"role": "system", "content": _SYSTEM_PROMPT},
@@ -55,10 +62,13 @@ def extract_project_info(description: str) -> dict:
     ]
     content = chat(messages, stream=False)
     parsed = _safe_json_loads(content)
-    return _normalize_project_info(parsed)
+    result = _normalize_project_info(parsed)
+    logger.info("llm_call fn=extract_project_info building_type=%s floors=%s", result.get("building_type"), result.get("floors"))
+    return result
 
 
 def check_requirements(description: str) -> dict:
+    logger.info("llm_call fn=check_requirements")
     prompt = _render_template("check_requirements.txt", description=description)
     messages = [
         {"role": "system", "content": _SYSTEM_PROMPT},
@@ -66,7 +76,13 @@ def check_requirements(description: str) -> dict:
     ]
     content = chat(messages, stream=False)
     parsed = _safe_json_loads(content)
-    return _normalize_requirements_check(parsed)
+    result = _normalize_requirements_check(parsed)
+    logger.info(
+        "llm_call fn=check_requirements satisfied=%s missing_count=%d",
+        result.get("requirements_satisfied"),
+        len(result.get("missing_fields") or []),
+    )
+    return result
 
 
 def extract_project_info_with_clarifications(
@@ -90,67 +106,6 @@ def extract_project_info_with_clarifications(
     content = chat(messages, stream=False)
     parsed = _safe_json_loads(content)
     return _normalize_project_info(parsed)
-
-
-def refine_boq_items(project_info: dict, items: list[dict]) -> list[dict]:
-    payload = json.dumps(
-        {
-            "project_info": project_info,
-            "items": items,
-        },
-        ensure_ascii=True,
-    )
-    prompt = _render_template("refine_boq_items.txt", payload=payload)
-    messages = [
-        {"role": "system", "content": _SYSTEM_PROMPT},
-        {"role": "user", "content": prompt},
-    ]
-    content = chat(messages, stream=False)
-    parsed = _safe_json_loads(content)
-    return _normalize_refined_boq(parsed)
-
-
-def generate_baseline_boq(project_info: dict) -> list[dict]:
-    """LLM Initial QS Pass — generate a baseline BOQ item list from project info."""
-    project_info_json = json.dumps(project_info, ensure_ascii=True)
-    prompt = _render_template("generate_baseline_boq.txt", project_info_json=project_info_json)
-    messages = [
-        {"role": "system", "content": _SYSTEM_PROMPT},
-        {"role": "user", "content": prompt},
-    ]
-    content = chat(messages, stream=False)
-    parsed = _safe_json_loads(content)
-    items = parsed.get("items") if isinstance(parsed, dict) else None
-    if not isinstance(items, list):
-        return []
-    return _normalize_boq_item_list(items)
-
-
-def gap_fill_boq_items(
-    project_info: dict,
-    baseline_items: list[dict],
-    item_predictor_items: list[str],
-) -> list[dict]:
-    """LLM Comparison & Gap Fill — add ONLY missing relevant items from Item Predictor."""
-    project_info_json = json.dumps(project_info, ensure_ascii=True)
-    baseline_json = json.dumps(baseline_items, ensure_ascii=True)
-    item_predictor_json = json.dumps(item_predictor_items, ensure_ascii=True)
-    prompt = _render_template(
-        "gap_fill_boq_items.txt",
-        project_info_json=project_info_json,
-        baseline_items_json=baseline_json,
-        item_predictor_items_json=item_predictor_json,
-    )
-    messages = [
-        {"role": "system", "content": _SYSTEM_PROMPT},
-        {"role": "user", "content": prompt},
-    ]
-    content = chat(messages, stream=False)
-    parsed = _safe_json_loads(content)
-    added = parsed.get("added_items") if isinstance(parsed, dict) else None
-    if not isinstance(added, list):
-        return []
-    return _normalize_boq_item_list(added)
 
 
 def _safe_json_loads(text: str) -> dict:
@@ -180,47 +135,6 @@ def _normalize_project_info(data: dict) -> dict:
         info["_raw_llm_response"] = data["_raw"]
     info["schema_hint"] = _SCHEMA_HINT
     return info
-
-
-def _normalize_refined_boq(data: dict) -> list[dict]:
-    items = data.get("items") if isinstance(data, dict) else None
-    if not isinstance(items, list):
-        return []
-
-    normalized: list[dict] = []
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        description = _coerce_value(item.get("description"))
-        if not description:
-            continue
-        normalized.append(
-            {
-                "description": description,
-                "category": _coerce_value(item.get("category")) or "misc",
-                "section": _coerce_value(item.get("section")) or "Miscellaneous",
-            }
-        )
-    return normalized
-
-
-def _normalize_boq_item_list(items: list) -> list[dict]:
-    """Shared normaliser for any LLM-returned list of BOQ item dicts."""
-    normalized: list[dict] = []
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        description = _coerce_value(item.get("description"))
-        if not description:
-            continue
-        normalized.append(
-            {
-                "description": description,
-                "category": _coerce_value(item.get("category")) or "misc",
-                "section": _coerce_value(item.get("section")) or "Miscellaneous",
-            }
-        )
-    return normalized
 
 
 def _normalize_requirements_check(data: dict) -> dict:

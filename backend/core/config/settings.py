@@ -101,13 +101,22 @@ class DatabaseSettings:
 	min_confidence_threshold: float = field(default_factory=lambda: _required_float("MIN_CONFIDENCE_THRESHOLD"))
 
 	log_level: str = field(default_factory=lambda: _optional_env("LOG_LEVEL") or "INFO")
-	log_file: str | None = field(default_factory=lambda: _optional_env("LOG_FILE") or "logs/app.log")
+	log_file_app: str = field(
+		default_factory=lambda: _optional_env("LOG_FILE_APP")
+		or _optional_env("LOG_FILE")
+		or "logs/app.log"
+	)
+	log_file_infra: str | None = field(default_factory=lambda: _optional_env("LOG_FILE_INFRA") or "logs/infra.log")
+	log_file_payload: str | None = field(default_factory=lambda: _optional_env("LOG_FILE_PAYLOAD") or "logs/payloads.log")
+	log_file: str = field(init=False, default="")
 
-	ollama_api_key: str | None = field(default_factory=lambda: _optional_env("OLLAMA_API_KEY"))
-	ollama_host: str | None = field(default_factory=lambda: _optional_env("OLLAMA_HOST"))
-	ollama_model: str | None = field(default_factory=lambda: _optional_env("OLLAMA_MODEL"))
+	openrouter_api_key: str | None = field(default_factory=lambda: _optional_env("OPENROUTER_API_KEY"))
+	openrouter_model: str | None = field(default_factory=lambda: _optional_env("OPENROUTER_MODEL"))
 
 	cors_allow_origins: list[str] = field(default_factory=_cors_allow_origins)
+
+	def __post_init__(self) -> None:
+		object.__setattr__(self, "log_file", self.log_file_app)
 
 
 settings = DatabaseSettings()

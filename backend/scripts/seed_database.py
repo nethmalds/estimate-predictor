@@ -1,1 +1,0 @@
-"""Database seed script placeholder."""

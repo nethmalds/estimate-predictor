@@ -15,6 +15,8 @@ if str(ROOT_DIR) not in sys.path:
 
 from core.config.settings import settings  # noqa: E402
 from infrastructure.data_layer.database.session import Base  # noqa: E402
+from infrastructure.data_layer.database.models.category import Category  # noqa: E402
+from infrastructure.data_layer.database.models.bsr_item import BSRItem  # noqa: E402
 
 # Alembic Config object.
 config = context.config

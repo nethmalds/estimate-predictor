@@ -1,0 +1,14 @@
+Check whether the user description includes all required fields for a residential building.
+Required fields:
+- floors
+- bedrooms
+- bathrooms
+- built_up_area
+- finish_level
+- roof_type
+
+If a field is missing or ambiguous, include it in missing_fields and provide a question to ask the user.
+Return JSON only with keys: requirements_satisfied, missing_fields, questions.
+
+Description:
+${description}

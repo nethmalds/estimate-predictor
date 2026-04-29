@@ -1,3 +1,11 @@
+from core.logging.logger import ensure_logging
+
+# Initialise the three-file logging system before any service module is imported.
+# This guarantees that every logger created during module-level code (e.g.
+# `logger = get_logger(__name__)` at the top of service files) already has its
+# file handler attached, so no early messages are lost.
+ensure_logging()
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 

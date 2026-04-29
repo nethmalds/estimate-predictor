@@ -20,35 +20,30 @@ import time
 from contextlib import contextmanager
 from typing import Callable, Iterator
 
-from services.clarification_process.clarification_agent import (
-    build_clarification_questions,
+from services.clarification_process.service import (
+    extract_project_info,
+    check_requirements,
     find_missing_fields,
+    build_clarification_questions,
 )
-from services.clarification_process.llm_client import check_requirements, extract_project_info
+from services.item_gen_process.service import build_final_boq_items
 from services.floorplan_process.image_cache import download_and_cache
 from services.floorplan_process.pipeline import run_floorplan_pipeline
-from services.item_gen_process.boq_builder import build_final_boq_items
 from services.rag_process.service import service as rag_service
 from services.quantity_gen_process.service import compute_quantities
 from services.pricing_process.cost_calculator import calculate_costs
 from services.reporting_process.report_builder import build_report
 from services.validation.confidence_scoring import score_confidence
 from services.validation.quantity_validator import validate_quantities
-from core.logging.logger import get_logger
+from core.logging.logger import ensure_logging, get_logger, log_payload
 
 logger = get_logger(__name__)
 
 import os
-import pprint
 from typing import Any
 
 def _dev_log(step_name: str, output: Any, cb: ProgressCallback | None = None) -> Any:
-    if os.getenv("ENV", "development") == "development":
-        print(f"\n========== [DEV LOG] {step_name} Output ==========")
-        pprint.pprint(output, indent=2, width=120)
-        print("==================================================\n")
-        if cb:
-            cb(step_name, "dev_log", {"output": output})
+    log_payload(step_name, output)
     return output
 
 
@@ -66,6 +61,7 @@ def run_estimation_pipeline(
     progress_callback: ProgressCallback | None = None,
 ) -> dict:
     """Entry point — extracts project info, runs clarification check, then full pipeline."""
+    ensure_logging()
     _emit(progress_callback, "extract_project_info", "started", None)
     with _log_step("extract_project_info"):
         project_info = _dev_log("extract_project_info", extract_project_info(description), progress_callback)
@@ -102,6 +98,7 @@ def run_estimation_pipeline_from_project_info(
     progress_callback: ProgressCallback | None = None,
 ) -> dict:
     """Run the full 11-stage estimation from a resolved project_info dict."""
+    ensure_logging()
 
     # -----------------------------------------------------------------------
     # Stage 1 & 2: Floorplan download + CV
@@ -138,7 +135,7 @@ def run_estimation_pipeline_from_project_info(
     # -----------------------------------------------------------------------
     _emit(progress_callback, "baseline_boq", "started", None)
     with _log_step("boq_generation"):
-        boq_items = _dev_log("build_final_boq_items", build_final_boq_items(project_info, floorplan_geometry), progress_callback)
+        boq_items = _dev_log("build_final_boq_items", build_final_boq_items(project_info, floorplan_geometry, progress_callback=progress_callback), progress_callback)
     _emit(
         progress_callback,
         "baseline_boq",
@@ -151,7 +148,7 @@ def run_estimation_pipeline_from_project_info(
     # -----------------------------------------------------------------------
     _emit(progress_callback, "bsr_matching", "started", {"item_count": len(boq_items)})
     with _log_step("bsr_matching", {"item_count": len(boq_items)}):
-        boq_items = _dev_log("_match_bsr_items", _match_bsr_items(boq_items), progress_callback)
+        boq_items = _dev_log("_match_bsr_items", _match_bsr_items(boq_items, progress_callback), progress_callback)
     _emit(progress_callback, "bsr_matching", "completed", {"item_count": len(boq_items)})
 
     # -----------------------------------------------------------------------
@@ -258,10 +255,51 @@ def _log_step(step: str, metadata: dict | None = None) -> Iterator[None]:
         logger.info("step_end step=%s duration_ms=%.2f", step, ms)
 
 
-def _match_bsr_items(items: list[dict]) -> list[dict]:
+# Keywords that identify contractual/financial items that have no BSR rate.
+_CONTRACTUAL_KEYWORDS = {
+    "performance security",
+    "advance payment security",
+    "advance payment bond",
+    "advance bond",
+    "lump sum",
+}
+
+
+def _is_contractual_item(item: dict) -> bool:
+    """Return True for financial/contractual items that cannot be BSR-matched."""
+    desc = (item.get("description") or "").lower()
+    cat = (item.get("category") or "").lower()
+    if cat == "preliminary_and_general":
+        return True
+    return any(kw in desc for kw in _CONTRACTUAL_KEYWORDS)
+
+
+def _match_bsr_items(items: list[dict], progress_callback: ProgressCallback | None = None) -> list[dict]:
     matched: list[dict] = []
+    unmatched_items: list[dict] = []
+    soft_matched_items: list[dict] = []
+
     for item in items:
         description = item.get("description") or ""
+
+        # --- Fix 4: bypass RAG for contractual / preliminary items ---
+        if _is_contractual_item(item):
+            merged = dict(item)
+            merged.update(
+                {
+                    "bsr_item_no": "CONTRACTUAL",
+                    "bsr_description": None,
+                    "unit": "item",
+                    "rate": 0.0,
+                    "match_confidence": 0.0,
+                    "match_type": "contractual",
+                    "needs_rate_review": True,
+                }
+            )
+            matched.append(merged)
+            unmatched_items.append(merged)   # still reported for user awareness
+            continue
+
         bsr_match = rag_service.match_boq_item(description)
         merged = dict(item)
         merged.update(
@@ -271,9 +309,75 @@ def _match_bsr_items(items: list[dict]) -> list[dict]:
                 "unit": bsr_match.get("unit"),
                 "rate": bsr_match.get("rate") or 0.0,
                 "match_confidence": bsr_match.get("confidence"),
+                "match_type": bsr_match.get("match_type", "no_match"),
+                "needs_rate_review": bsr_match.get("needs_rate_review", False),
             }
         )
         matched.append(merged)
+
+        item_no = bsr_match.get("item_no")
+        match_type = bsr_match.get("match_type", "no_match")
+
+        if item_no == "NO_MATCH":
+            unmatched_items.append(merged)
+        elif match_type == "soft_match":
+            soft_matched_items.append(merged)
+
+    # --- Report unmatched items ---
+    if unmatched_items:
+        logger.warning("========== [UNMATCHED BSR ITEMS] ==========")
+        logger.warning("Total unmatched items: %d", len(unmatched_items))
+        for i, item in enumerate(unmatched_items, 1):
+            logger.warning("%d. [%s] %s", i, item.get("category"), item.get("description"))
+        logger.warning("===========================================")
+        logger.warning("bsr_matching_unmatched_count count=%d", len(unmatched_items))
+
+        log_payload(
+            "bsr_matching_unmatched",
+            {
+                "unmatched_count": len(unmatched_items),
+                "unmatched_items": [
+                    {
+                        "category": item.get("category"),
+                        "description": item.get("description"),
+                        "match_type": item.get("match_type"),
+                    }
+                    for item in unmatched_items
+                ],
+            },
+        )
+
+    # --- Report soft-matched items (borderline — user should review rates) ---
+    if soft_matched_items:
+        logger.warning("========== [SOFT-MATCHED BSR ITEMS] ==========")
+        logger.warning("Total soft-matched items: %d", len(soft_matched_items))
+        for i, item in enumerate(soft_matched_items, 1):
+            logger.warning(
+                "%d. [%s] %s  →  BSR:%s (conf=%.3f)",
+                i,
+                item.get("category"),
+                item.get("description"),
+                item.get("bsr_item_no"),
+                item.get("match_confidence") or 0.0,
+            )
+        logger.warning("===============================================")
+
+        log_payload(
+            "bsr_matching_soft",
+            {
+                "soft_match_count": len(soft_matched_items),
+                "soft_match_items": [
+                    {
+                        "category": item.get("category"),
+                        "description": item.get("description"),
+                        "bsr_item_no": item.get("bsr_item_no"),
+                        "confidence": item.get("match_confidence"),
+                    }
+                    for item in soft_matched_items
+                ],
+            },
+        )
+
     return matched
 
 

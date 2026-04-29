@@ -1,4 +1,7 @@
 from pathlib import Path
+from core.logging.logger import get_logger
+
+logger = get_logger(__name__)
 
 from services.rag_process.db import init_db, upsert_bsr_items
 from services.rag_process.embeddings import EmbeddingProvider
@@ -8,6 +11,7 @@ from services.rag_process.scorer import score_candidate
 from core.config.settings import settings
 from infrastructure.data_layer.vector_db.vector_store import ChromaBSRVectorStore
 from infrastructure.data_layer.database.session import SessionLocal
+from infrastructure.data_layer.database.models.bsr_item import BSRItem
 
 
 class BOQMatcherService:
@@ -27,6 +31,15 @@ class BOQMatcherService:
 
     def bootstrap(self) -> None:
         init_db()
+        with SessionLocal() as db:
+            count = db.query(BSRItem).count()
+            if count == 0:
+                logger.info("Database is empty. Auto-ingesting BSR PDF...")
+                pdf_path = Path(__file__).resolve().parents[2] / "infrastructure" / "data_layer" / "storage" / "bsr_wp_2025.pdf"
+                if pdf_path.exists():
+                    self.ingest_bsr_pdf(str(pdf_path))
+                else:
+                    logger.warning(f"Auto-ingest skipped: PDF not found at {pdf_path}")
 
     def ingest_bsr_pdf(self, pdf_path: str) -> dict:
         parsed_items = parse_bsr_pdf(pdf_path)
@@ -67,7 +80,7 @@ class BOQMatcherService:
             )
 
             if not candidates:
-                return {"item_no": "NO_MATCH", "confidence": 0.0}
+                return {"item_no": "NO_MATCH", "confidence": 0.0, "match_type": "no_match", "needs_rate_review": True}
 
             scored = []
             for candidate in candidates:
@@ -76,16 +89,28 @@ class BOQMatcherService:
                 scored.append((item, component_scores))
 
             best_item, best_scores = max(scored, key=lambda pair: pair[1]["final_score"])
+            final_score = best_scores["final_score"]
 
-            if best_scores["final_score"] < settings.min_confidence_threshold:
-                return {"item_no": "NO_MATCH", "confidence": 0.0}
+            # --- Three-tier confidence system ---
+            # < SOFT_THRESHOLD  → no usable match at all
+            SOFT_THRESHOLD = 0.30
+            CONFIRM_THRESHOLD = settings.min_confidence_threshold  # 0.45
+
+            if final_score < SOFT_THRESHOLD:
+                return {"item_no": "NO_MATCH", "confidence": 0.0, "match_type": "no_match", "needs_rate_review": True}
+
+            # Soft match: score in [SOFT_THRESHOLD, CONFIRM_THRESHOLD)
+            match_type = "confirmed" if final_score >= CONFIRM_THRESHOLD else "soft_match"
+            needs_rate_review = match_type == "soft_match"
 
             return {
                 "item_no": best_item.item_no,
                 "description": best_item.description,
                 "unit": best_item.unit,
                 "rate": best_item.rate,
-                "confidence": best_scores["final_score"],
+                "confidence": final_score,
+                "match_type": match_type,
+                "needs_rate_review": needs_rate_review,
                 "match_details": {
                     "vector_score": best_scores["vector_score"],
                     "keyword_score": best_scores["keyword_score"],
