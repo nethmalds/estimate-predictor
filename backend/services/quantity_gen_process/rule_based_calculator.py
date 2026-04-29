@@ -65,9 +65,23 @@ def calculate_from_geometry(
             return round(area_m2 * floor_count * 0.6, 2), "rule_based"
         return None, None
 
-    if category in ("concrete_works", "formwork", "reinforcement"):
+    # C9 fix: each structural category has its own dimensionally-correct formula.
+    # concrete_works → m³ (~12% of slab volume ratio)
+    # formwork       → m² (contact/shutter area)
+    # reinforcement  → kg (~12.5 kg per m² of slab area)
+    if category == "concrete_works":
         if area_m2 > 0:
-            return round(area_m2 * floor_count * 0.75, 2), "rule_based"
+            return round(area_m2 * floor_count * 0.12, 2), "rule_based"   # m³
+        return None, None
+
+    if category == "formwork":
+        if area_m2 > 0:
+            return round(area_m2 * floor_count * 0.75, 2), "rule_based"   # m²
+        return None, None
+
+    if category == "reinforcement":
+        if area_m2 > 0:
+            return round(area_m2 * floor_count * 12.5, 2), "rule_based"   # kg
         return None, None
 
     if category == "brick_masonry":

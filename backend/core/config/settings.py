@@ -115,6 +115,20 @@ class DatabaseSettings:
 
 	cors_allow_origins: list[str] = field(default_factory=_cors_allow_origins)
 
+	# Runtime environment — controls feature flags (e.g. diagnostic routes).
+	# Set to "production" in deployed environments to disable dev-only surfaces.
+	env: str = field(default_factory=lambda: _optional_env("ENV") or "development")
+
+	# Sri Lankan BSR cost factors (configurable via .env.local)
+	# preliminaries: covers site management, temporary works, bonds etc. (default 8%)
+	# contingencies: allowance for unforeseen variations (default 5%)
+	preliminaries_rate: float = field(
+		default_factory=lambda: float(_optional_env("PRELIMINARIES_RATE") or "0.08")
+	)
+	contingencies_rate: float = field(
+		default_factory=lambda: float(_optional_env("CONTINGENCIES_RATE") or "0.05")
+	)
+
 	def __post_init__(self) -> None:
 		object.__setattr__(self, "log_file", self.log_file_app)
 

@@ -8,7 +8,7 @@ import {
   startClarificationSession,
   submitClarificationAnswer,
 } from "../services/estimation";
-import { Message, ExcelPreviewRow, UploadState } from "@/types/chat";
+import { Message, ExcelPreviewRow, UploadState, QuestionMetadata } from "@/types/chat";
 import { ChatInput } from "@/components/chat/ChatInput";
 import { ChatMessage } from "@/components/chat/ChatMessage";
 
@@ -164,6 +164,7 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [clarificationSessionId, setClarificationSessionId] = useState<string | null>(null);
   const [currentQuestion, setCurrentQuestion] = useState<string | null>(null);
+  const [currentQuestionField, setCurrentQuestionField] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
@@ -259,8 +260,7 @@ export default function Home() {
     if (isClarifying && clarificationSessionId) {
       try {
         await submitClarificationAnswer(clarificationSessionId, trimmedInput);
-        // Reset loading so the UI doesn't freeze between question events.
-        // The next SSE event (question / info / completed) will manage state from here.
+        setCurrentQuestionField(null);
         setIsLoading(false);
       } catch (error) {
         const message = error instanceof Error ? error.message : "Unknown error.";
@@ -268,9 +268,9 @@ export default function Home() {
           ...prev,
           { role: "assistant", content: `Sorry, I couldn't submit the clarification. ${message}` },
         ]);
-        // Close the broken session so the next message starts fresh.
         setClarificationSessionId(null);
         setCurrentQuestion(null);
+        setCurrentQuestionField(null);
         eventSourceRef.current?.close();
         setIsLoading(false);
       }
@@ -294,12 +294,31 @@ export default function Home() {
       eventSourceRef.current = source;
 
       source.addEventListener("question", (event) => {
-        const data = JSON.parse((event as MessageEvent).data) as { question: string };
+        const data = JSON.parse((event as MessageEvent).data) as {
+          question: string;
+          field?: string;
+          metadata?: QuestionMetadata;
+        };
         setMessages((prev) => [
           ...prev,
-          { role: "assistant", content: data.question },
+          {
+            role: "assistant",
+            content: data.question,
+            questionField: data.field,
+            questionMetadata: data.metadata,
+          },
         ]);
         setCurrentQuestion(data.question);
+        setCurrentQuestionField(data.field ?? null);
+        setIsLoading(false);
+      });
+
+      source.addEventListener("validation_error", (event) => {
+        const data = JSON.parse((event as MessageEvent).data) as { field: string; message: string };
+        setMessages((prev) => [
+          ...prev,
+          { role: "validation_error", content: data.message },
+        ]);
         setIsLoading(false);
       });
 
@@ -444,9 +463,38 @@ export default function Home() {
       {/* Message list */}
       <main className="flex-1 max-w-5xl mx-auto overflow-y-auto py-6 pb-2" aria-label="Conversation">
         <div className="px-6 flex flex-col">
-          {messages.map((msg, idx) => (
-            <ChatMessage key={idx} msg={msg} />
-          ))}
+          {messages.map((msg, idx) => {
+            const isLastMsg = idx === messages.length - 1;
+            const showWidget =
+              isLastMsg &&
+              msg.role === "assistant" &&
+              !!msg.questionMetadata &&
+              msg.questionMetadata.input_type !== "text" &&
+              clarificationSessionId !== null;
+            return (
+              <ChatMessage
+                key={idx}
+                msg={msg}
+                onWidgetSubmit={
+                  showWidget
+                    ? async (answer: string) => {
+                        if (!clarificationSessionId) return;
+                        setMessages((prev) => [...prev, { role: "user", content: answer }]);
+                        setIsLoading(true);
+                        try {
+                          await submitClarificationAnswer(clarificationSessionId, answer);
+                          setCurrentQuestionField(null);
+                          setIsLoading(false);
+                        } catch (err) {
+                          console.error("Widget submit failed:", err);
+                          setIsLoading(false);
+                        }
+                      }
+                    : undefined
+                }
+              />
+            );
+          })}
 
           {/* Typing indicator */}
           {isLoading && (
