@@ -1,18 +1,19 @@
 """Three-stage BOQ item generation.
 
-Stage 1 — Real Item Predictor          → candidate items (Random Forest predictions)
+Stage 1 — Real Item Predictor  → candidate items (Random Forest predictions)
 Stage 2 — LLM Initial QS Pass  → baseline BOQ item list, seeded with predictor hints
-Stage 3 — LLM Gap Fill          → compare baseline vs Item Predictor, add ONLY missing items
+Stage 3 — LLM Gap Fill         → compare baseline vs Item Predictor, add ONLY missing items
 
 Each item in the final list is tagged with a ``source`` field:
   ``"llm_baseline"``  — came from the LLM initial QS pass
-  ``"item_predictor"``       — added because Item Predictor predicted it and LLM confirmed it missing
+  ``"item_predictor"``— added because Item Predictor predicted it and LLM confirmed it missing
   ``"llm_gap_fill"``  — explicitly added during the LLM gap-fill comparison step
 """
 from __future__ import annotations
 
+import difflib
 import re
-from typing import Any
+from typing import Any, Callable
 
 from services.item_gen_process.item_predictor import predict_boq_items
 from services.item_gen_process.llm_client import (
@@ -49,9 +50,15 @@ _CATEGORY_RULES: list[tuple[str, str, str]] = [
 # Public API
 # ---------------------------------------------------------------------------
 
-from typing import Any, Callable
-
 ProgressCallback = Callable[[str, str, dict | None], None]
+
+# Fuzzy dedup threshold (Q-C): items with similarity ≥ this value are merged.
+_DEDUP_SIMILARITY_THRESHOLD = 0.90
+
+
+class EstimationError(RuntimeError):
+    """Raised when the BOQ generation pipeline produces no usable items."""
+
 
 def build_final_boq_items(
     project_info: dict,
@@ -119,14 +126,26 @@ def build_final_boq_items(
     log_payload("llm_gap_fill_additions", added_items)
 
     # -----------------------------------------------------------------------
-    # Merge into final list
+    # Merge and deduplicate (C5)
     # -----------------------------------------------------------------------
+    merged: list[dict[str, Any]] = baseline_items + added_items
+    deduped, removed_count = _deduplicate_items(merged)
+    if removed_count:
+        logger.warning("boq_dedup removed=%d (similarity≥%.0f%%)", removed_count, _DEDUP_SIMILARITY_THRESHOLD * 100)
+
     final_items: list[dict[str, Any]] = []
-    for item in baseline_items + added_items:
+    for item in deduped:
         enriched = _enrich_item(item, floors)
         final_items.append(enriched)
 
-    logger.info("boq_final items=%d", len(final_items))
+    # C6: empty BOQ is a hard failure
+    if not final_items:
+        raise EstimationError(
+            "BOQ generation produced no items. All three stages (Item Predictor, "
+            "LLM Baseline, Gap Fill) failed or returned empty results."
+        )
+
+    logger.info("boq_final items=%d (deduped=%d removed)", len(final_items), removed_count)
     log_payload("final_boq_items_merged", final_items)
     return final_items
 
@@ -147,6 +166,52 @@ def _enrich_item(item: dict[str, Any], floors: int) -> dict[str, Any]:
 
     enriched["floors"] = floors
     return enriched
+
+
+def _deduplicate_items(
+    items: list[dict[str, Any]],
+    threshold: float = _DEDUP_SIMILARITY_THRESHOLD,
+) -> tuple[list[dict[str, Any]], int]:
+    """Remove near-duplicate BOQ items using fuzzy string matching (C5).
+
+    Two items are considered duplicates when the similarity ratio of their
+    normalised descriptions is ≥ *threshold* (default 0.90 = 90%).
+    The first occurrence is kept; subsequent duplicates are dropped.
+
+    Returns
+    -------
+    (deduped_list, removed_count)
+    """
+    unique: list[dict[str, Any]] = []
+    removed = 0
+    for candidate in items:
+        norm_cand = _norm_desc(candidate.get("description") or "")
+        is_dup = False
+        for kept in unique:
+            ratio = difflib.SequenceMatcher(
+                None,
+                norm_cand,
+                _norm_desc(kept.get("description") or ""),
+            ).ratio()
+            if ratio >= threshold:
+                logger.warning(
+                    "boq_dedup_item desc=%r matches=%r similarity=%.3f",
+                    candidate.get("description"),
+                    kept.get("description"),
+                    ratio,
+                )
+                is_dup = True
+                break
+        if not is_dup:
+            unique.append(candidate)
+        else:
+            removed += 1
+    return unique, removed
+
+
+def _norm_desc(text: str) -> str:
+    """Lowercase and strip punctuation for fuzzy comparison."""
+    return re.sub(r"[^a-z0-9 ]", "", text.lower()).strip()
 
 
 def _infer_category(description: str) -> str:

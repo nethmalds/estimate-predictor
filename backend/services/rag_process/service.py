@@ -1,3 +1,4 @@
+import threading
 from pathlib import Path
 from core.logging.logger import get_logger
 
@@ -16,17 +17,22 @@ from infrastructure.data_layer.database.models.bsr_item import BSRItem
 
 class BOQMatcherService:
     def __init__(self):
+        self._lock = threading.Lock()  # R8: guards lazy init of embedder + vector_store
         self.embedder: EmbeddingProvider | None = None
         self.vector_store: ChromaBSRVectorStore | None = None
 
     def _get_embedder(self) -> EmbeddingProvider:
         if self.embedder is None:
-            self.embedder = EmbeddingProvider()
+            with self._lock:
+                if self.embedder is None:  # double-checked locking
+                    self.embedder = EmbeddingProvider()
         return self.embedder
 
     def _get_vector_store(self) -> ChromaBSRVectorStore:
         if self.vector_store is None:
-            self.vector_store = ChromaBSRVectorStore()
+            with self._lock:
+                if self.vector_store is None:  # double-checked locking
+                    self.vector_store = ChromaBSRVectorStore()
         return self.vector_store
 
     def bootstrap(self) -> None:

@@ -26,6 +26,7 @@ from services.clarification_process.service import (
     find_missing_fields,
     build_clarification_questions,
 )
+from services.clarification_process.clarification_agent import apply_defaults
 from services.item_gen_process.service import build_final_boq_items
 from services.floorplan_process.image_cache import download_and_cache
 from services.floorplan_process.pipeline import run_floorplan_pipeline
@@ -33,6 +34,7 @@ from services.rag_process.service import service as rag_service
 from services.quantity_gen_process.service import compute_quantities
 from services.pricing_process.cost_calculator import calculate_costs
 from services.reporting_process.report_builder import build_report
+from services.validation.boq_validator import validate_boq_items
 from services.validation.confidence_scoring import score_confidence
 from services.validation.quantity_validator import validate_quantities
 from core.logging.logger import ensure_logging, get_logger, log_payload
@@ -42,13 +44,17 @@ logger = get_logger(__name__)
 import os
 from typing import Any
 
-def _dev_log(step_name: str, output: Any, cb: ProgressCallback | None = None) -> Any:
-    log_payload(step_name, output)
-    return output
-
-
-
 ProgressCallback = Callable[[str, str, dict | None], None]
+
+
+def _dev_log(step_name: str, output: Any, cb: ProgressCallback | None = None) -> Any:
+    """Log payload to payloads.log AND push a dev_log event to the pipeline trace."""
+    log_payload(step_name, output)
+    if cb:
+        # status="dev_log" signals the progress callback to write to trace_queue
+        # without sending it over the main SSE stream to the user.
+        cb(step_name, "dev_log", output if isinstance(output, dict) else {"data": str(output)[:500]})
+    return output
 
 
 # ---------------------------------------------------------------------------
@@ -99,6 +105,10 @@ def run_estimation_pipeline_from_project_info(
 ) -> dict:
     """Run the full 11-stage estimation from a resolved project_info dict."""
     ensure_logging()
+
+    # Apply Sri Lankan construction defaults for any non-MVED fields not
+    # yet set.  Must run before any service that reads parameters.
+    project_info = apply_defaults(project_info)
 
     # -----------------------------------------------------------------------
     # Stage 1 & 2: Floorplan download + CV
@@ -160,6 +170,18 @@ def run_estimation_pipeline_from_project_info(
     _emit(progress_callback, "quantity_takeoff", "completed", {"item_count": len(boq_items)})
 
     # -----------------------------------------------------------------------
+    # Stage 7.5: BOQ Structural Validation (Q2 fix)
+    # -----------------------------------------------------------------------
+    with _log_step("boq_validation"):
+        boq_validation = validate_boq_items(boq_items)
+        _dev_log("boq_validation", boq_validation, progress_callback)
+        if not boq_validation["is_valid"]:
+            logger.warning(
+                "boq_validation_errors errors=%s",
+                boq_validation["errors"],
+            )
+
+    # -----------------------------------------------------------------------
     # Stage 8: Validation
     # -----------------------------------------------------------------------
     _emit(progress_callback, "validation", "started", None)
@@ -191,7 +213,11 @@ def run_estimation_pipeline_from_project_info(
     # -----------------------------------------------------------------------
     _emit(progress_callback, "transparency", "started", None)
     with _log_step("transparency"):
-        confidence = _dev_log("score_confidence", score_confidence(project_info, floorplan_geometry, warnings), progress_callback)
+        confidence = _dev_log(
+            "score_confidence",
+            score_confidence(project_info, floorplan_geometry, warnings, boq_items),
+            progress_callback,
+        )
         source_summary = _dev_log("_build_source_summary", _build_source_summary(boq_items), progress_callback)
     _emit(progress_callback, "transparency", "completed", {"confidence": confidence, "sources": source_summary})
 

@@ -1,20 +1,189 @@
-import { Message } from "@/types/chat";
+import { useState } from "react";
+import { Message, QuestionMetadata } from "@/types/chat";
 import { ExcelIcon } from "@/components/icons";
-import { Download } from "lucide-react";
+import { Download, AlertTriangle } from "lucide-react";
 
 interface ChatMessageProps {
   msg: Message;
+  /** Called when the user selects an option from an inline widget */
+  onWidgetSubmit?: (answer: string) => void;
 }
 
-export function ChatMessage({ msg }: ChatMessageProps) {
-  if (msg.role === "info") {
+// ---------------------------------------------------------------------------
+// Inline input widgets
+// ---------------------------------------------------------------------------
+
+/** Chip-style button group for dropdown questions */
+function DropdownWidget({
+  options,
+  onSelect,
+}: {
+  options: { value: string; label: string }[];
+  onSelect: (value: string) => void;
+}) {
+  const [selected, setSelected] = useState<string | null>(null);
+  return (
+    <div className="flex flex-wrap gap-2 mt-3" role="group" aria-label="Select an option">
+      {options.map((opt) => (
+        <button
+          key={opt.value}
+          id={`option-${opt.value}`}
+          onClick={() => {
+            setSelected(opt.value);
+            onSelect(opt.value);
+          }}
+          disabled={selected !== null}
+          className={`px-4 py-2 rounded-xl text-[13px] font-medium border transition-all duration-150 cursor-pointer
+            ${
+              selected === opt.value
+                ? "bg-zinc-100 text-zinc-900 border-zinc-100"
+                : "bg-zinc-900 text-zinc-200 border-zinc-700 hover:bg-zinc-800 hover:border-zinc-500"
+            }
+            ${selected !== null && selected !== opt.value ? "opacity-40 cursor-default" : ""}
+          `}
+          aria-pressed={selected === opt.value}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Preset range selector + optional custom numeric input for built_up_area */
+function AreaPickerWidget({
+  presets,
+  customUnits,
+  onSelect,
+}: {
+  presets: { value: string; label: string }[];
+  customUnits: string[];
+  onSelect: (value: string) => void;
+}) {
+  const [selected, setSelected] = useState<string | null>(null);
+  const [showCustom, setShowCustom] = useState(false);
+  const [customVal, setCustomVal] = useState("");
+  const [unit, setUnit] = useState(customUnits[0] ?? "sqft");
+  const [submitted, setSubmitted] = useState(false);
+
+  function handlePreset(val: string) {
+    if (submitted) return;
+    setSelected(val);
+    setShowCustom(false);
+    setSubmitted(true);
+    onSelect(val);
+  }
+
+  function handleCustomSubmit() {
+    if (submitted || !customVal.trim()) return;
+    const answer = `${customVal.trim()} ${unit}`;
+    setSubmitted(true);
+    setSelected("custom");
+    onSelect(answer);
+  }
+
+  return (
+    <div className="mt-3 space-y-2">
+      <div className="flex flex-wrap gap-2" role="group" aria-label="Select built-up area">
+        {presets.map((p) => (
+          <button
+            key={p.value}
+            id={`area-preset-${p.value}`}
+            onClick={() => handlePreset(p.value)}
+            disabled={submitted}
+            className={`px-3 py-1.5 rounded-xl text-[13px] font-medium border transition-all duration-150 cursor-pointer
+              ${
+                selected === p.value
+                  ? "bg-zinc-100 text-zinc-900 border-zinc-100"
+                  : "bg-zinc-900 text-zinc-200 border-zinc-700 hover:bg-zinc-800 hover:border-zinc-500"
+              }
+              ${submitted && selected !== p.value ? "opacity-40 cursor-default" : ""}
+            `}
+            aria-pressed={selected === p.value}
+          >
+            {p.label}
+          </button>
+        ))}
+        {!submitted && (
+          <button
+            id="area-custom-toggle"
+            onClick={() => setShowCustom((v) => !v)}
+            className="px-3 py-1.5 rounded-xl text-[13px] font-medium border border-dashed border-zinc-600 text-zinc-400 hover:border-zinc-400 hover:text-zinc-200 transition-all duration-150 cursor-pointer"
+          >
+            Enter custom size
+          </button>
+        )}
+      </div>
+      {showCustom && !submitted && (
+        <div className="flex items-center gap-2 mt-2">
+          <input
+            id="area-custom-input"
+            type="number"
+            min={1}
+            placeholder="e.g. 2000"
+            value={customVal}
+            onChange={(e) => setCustomVal(e.target.value)}
+            className="w-32 px-3 py-1.5 rounded-xl bg-zinc-900 border border-zinc-700 text-zinc-100 text-[13px] focus:outline-none focus:border-zinc-400"
+            aria-label="Custom built-up area value"
+            onKeyDown={(e) => e.key === "Enter" && handleCustomSubmit()}
+          />
+          <div className="flex rounded-xl overflow-hidden border border-zinc-700">
+            {customUnits.map((u) => (
+              <button
+                key={u}
+                onClick={() => setUnit(u)}
+                className={`px-3 py-1.5 text-[12px] font-medium transition-colors cursor-pointer
+                  ${unit === u ? "bg-zinc-700 text-zinc-100" : "bg-zinc-900 text-zinc-400 hover:bg-zinc-800"}`}
+                aria-pressed={unit === u}
+              >
+                {u}
+              </button>
+            ))}
+          </div>
+          <button
+            id="area-custom-submit"
+            onClick={handleCustomSubmit}
+            className="px-4 py-1.5 rounded-xl bg-zinc-700 hover:bg-zinc-600 text-zinc-100 text-[13px] font-medium transition-colors cursor-pointer"
+          >
+            Confirm
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main ChatMessage component
+// ---------------------------------------------------------------------------
+
+export function ChatMessage({ msg, onWidgetSubmit }: ChatMessageProps) {
+  // ── Validation error banner (e.g. floors=0) ─────────────────────────────
+  if (msg.role === "validation_error") {
     return (
-      <div className="flex w-full justify-center my-3" role="status">
-        <div className="text-[12px] text-zinc-500 italic text-center px-4 py-1.5 bg-zinc-900 rounded-full">{msg.content}</div>
+      <div
+        className="flex items-start gap-3 w-full my-2 px-4 py-3 rounded-xl bg-amber-950/40 border border-amber-700/40"
+        role="alert"
+        aria-live="assertive"
+      >
+        <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" aria-hidden="true" />
+        <span className="text-[14px] text-amber-300 leading-relaxed">{msg.content}</span>
       </div>
     );
   }
 
+  // ── Info pill ────────────────────────────────────────────────────────────
+  if (msg.role === "info") {
+    return (
+      <div className="flex w-full justify-center my-3" role="status">
+        <div className="text-[12px] text-zinc-500 italic text-center px-4 py-1.5 bg-zinc-900 rounded-full">
+          {msg.content}
+        </div>
+      </div>
+    );
+  }
+
+  // ── User message ─────────────────────────────────────────────────────────
   if (msg.role === "user") {
     return (
       <div className="flex w-full justify-end my-4">
@@ -28,6 +197,7 @@ export function ChatMessage({ msg }: ChatMessageProps) {
     );
   }
 
+  // ── Excel result card ────────────────────────────────────────────────────
   if (msg.role === "excel") {
     return (
       <div className="flex w-full justify-start my-4 mt-2">
@@ -98,7 +268,9 @@ export function ChatMessage({ msg }: ChatMessageProps) {
     );
   }
 
-  // assistant
+  // ── Assistant message (may include an inline input widget) ───────────────
+  const meta: QuestionMetadata | undefined = msg.questionMetadata;
+
   return (
     <div className="flex w-full justify-start my-4 mt-2">
       <div
@@ -108,8 +280,29 @@ export function ChatMessage({ msg }: ChatMessageProps) {
       >
         E
       </div>
-      <div className="max-w-full text-zinc-200 text-[16px] leading-[1.65] wrap-break-word whitespace-pre-wrap py-0.5 font-inter" aria-label="Assistant response">
-        {msg.content}
+      <div className="max-w-full flex-1">
+        <div
+          className="text-zinc-200 text-[16px] leading-[1.65] wrap-break-word whitespace-pre-wrap py-0.5 font-inter"
+          aria-label="Assistant response"
+        >
+          {msg.content}
+        </div>
+
+        {/* Inline input widget — rendered only when questionMetadata is present */}
+        {meta && onWidgetSubmit && (
+          <>
+            {meta.input_type === "dropdown" && (
+              <DropdownWidget options={meta.options} onSelect={onWidgetSubmit} />
+            )}
+            {meta.input_type === "area_picker" && (
+              <AreaPickerWidget
+                presets={meta.presets}
+                customUnits={meta.custom_units}
+                onSelect={onWidgetSubmit}
+              />
+            )}
+          </>
+        )}
       </div>
     </div>
   );

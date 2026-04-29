@@ -96,7 +96,11 @@ def chat(
         )
         return result
     except Exception as exc:
-        if os.getenv("ENV", "development") == "development":
+        # R1: only fall back to mock for connection / rate-limit issues in dev.
+        # All other exceptions (auth errors, bad JSON, etc.) are re-raised.
+        from openai import APIConnectionError, APIStatusError  # noqa: PLC0415
+        is_transient = isinstance(exc, (APIConnectionError, APIStatusError))
+        if is_transient and os.getenv("ENV", "development") == "development":
             logger.warning("openrouter_fallback model=%s error=%s", model_name, exc)
             return _mock_fallback(messages)
         raise
