@@ -7,7 +7,7 @@ Stage 3 — LLM Gap Fill         → compare baseline vs Item Predictor, add ONL
 Each item in the final list is tagged with a ``source`` field:
   ``"llm_baseline"``  — came from the LLM initial QS pass
   ``"item_predictor"``— added because Item Predictor predicted it and LLM confirmed it missing
-  ``"llm_gap_fill"``  — explicitly added during the LLM gap-fill comparison step
+  ``"llm_reconciled"``  — part of the final reconciled BOQ returned by Stage 3
 """
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ import difflib
 import re
 from typing import Any, Callable
 
-from services.item_gen_process.item_predictor import predict_boq_items
+from services.item_gen_process.item_predictor import predict_boq_items, predict_boq_items_with_confidence
 from services.item_gen_process.llm_client import (
     generate_baseline_boq,
     gap_fill_boq_items,
@@ -87,13 +87,21 @@ def build_final_boq_items(
     # Stage 1: Item Predictor → candidate items (runs first to seed Stage 2)
     # -----------------------------------------------------------------------
     logger.info("boq_stage1_item_predictor start")
+    item_predictor_with_conf: list[dict] = []
     try:
-        item_predictor_raw: list[str] = predict_boq_items(project_info)
+        item_predictor_with_conf = predict_boq_items_with_confidence(project_info)
+        item_predictor_raw = [entry["description"] for entry in item_predictor_with_conf]
     except Exception:
         logger.exception("boq_stage1_item_predictor failed — using empty predictions")
         item_predictor_raw = []
     logger.info("boq_stage1_item_predictor predictions=%d", len(item_predictor_raw))
     log_payload("item_predictor_raw", item_predictor_raw)
+
+    # Build a lookup from description → source_confidence for enrichment later
+    _predictor_conf: dict[str, float] = {
+        e["description"]: e["source_confidence"]
+        for e in item_predictor_with_conf
+    }
 
     # -----------------------------------------------------------------------
     # Stage 2: LLM Initial QS Pass → baseline BOQ, seeded with predictor hints
@@ -111,51 +119,146 @@ def build_final_boq_items(
     log_payload("llm_baseline_boq", baseline_items)
 
     # -----------------------------------------------------------------------
-    # Stage 3: LLM Gap Fill → compare & add only missing relevant items
+    # Stage 3: LLM Full Reconciliation — returns the COMPLETE final BOQ list
     # -----------------------------------------------------------------------
-    logger.info("boq_stage3_gap_fill start")
-    added_items: list[dict] = []
+    logger.info("boq_stage3_reconciliation start")
+    reconciled_items: list[dict] = []
     try:
-        added_items = gap_fill_boq_items(project_info, baseline_items, item_predictor_raw)
+        reconciled_items = gap_fill_boq_items(project_info, baseline_items, item_predictor_raw)
     except Exception:
-        logger.exception("boq_stage3_gap_fill failed — skipping gap fill")
+        logger.exception("boq_stage3_reconciliation failed — falling back to baseline")
+        reconciled_items = baseline_items
 
-    for item in added_items:
-        item["source"] = "llm_gap_fill"
-    logger.info("boq_stage3_gap_fill added=%d", len(added_items))
-    log_payload("llm_gap_fill_additions", added_items)
+    for item in reconciled_items:
+        if not item.get("source"):
+            item["source"] = "llm_reconciled"
+    logger.info("boq_stage3_reconciliation items=%d", len(reconciled_items))
+    log_payload("llm_reconciled_items", reconciled_items)
 
     # -----------------------------------------------------------------------
-    # Merge and deduplicate (C5)
+    # Deduplicate as safety fallback (C5)
     # -----------------------------------------------------------------------
-    merged: list[dict[str, Any]] = baseline_items + added_items
-    deduped, removed_count = _deduplicate_items(merged)
+    deduped, removed_count = _deduplicate_items(reconciled_items)
     if removed_count:
         logger.warning("boq_dedup removed=%d (similarity≥%.0f%%)", removed_count, _DEDUP_SIMILARITY_THRESHOLD * 100)
 
     final_items: list[dict[str, Any]] = []
     for item in deduped:
-        enriched = _enrich_item(item, floors)
+        enriched = _enrich_item(item, floors, _predictor_conf)
         final_items.append(enriched)
 
     # C6: empty BOQ is a hard failure
     if not final_items:
         raise EstimationError(
             "BOQ generation produced no items. All three stages (Item Predictor, "
-            "LLM Baseline, Gap Fill) failed or returned empty results."
+            "LLM Baseline, Reconciliation) failed or returned empty results."
         )
 
     logger.info("boq_final items=%d (deduped=%d removed)", len(final_items), removed_count)
-    log_payload("final_boq_items_merged", final_items)
+    log_payload("final_boq_items_reconciled", final_items)
     return final_items
+
+
+# ---------------------------------------------------------------------------
+# BOQ item contract metadata tables (Phase 2)
+# ---------------------------------------------------------------------------
+
+# Category slug → ML Work_Category label (matches quantity_calculator training)
+_CATEGORY_TO_WORK_CATEGORY: dict[str, str] = {
+    "structure":                "Concrete Works",
+    "concrete_works":           "Concrete Works",
+    "foundation":               "Piling & Substructure",
+    "piling_and_substructure":  "Piling & Substructure",
+    "masonry":                  "Brick Masonry",
+    "brick_masonry":            "Brick Masonry",
+    "finishes":                 "Plastering & Rendering",
+    "plastering_and_rendering": "Plastering & Rendering",
+    "painting_and_finishes":    "Painting & Finishes",
+    "roof":                     "Roofing & Ceiling",
+    "roofing_and_ceiling":      "Roofing & Ceiling",
+    "openings":                 "Doors, Windows & Glazing",
+    "doors_windows_and_glazing":"Doors, Windows & Glazing",
+    "electrical":               "Electrical & Mechanical",
+    "electrical_and_mechanical":"Electrical & Mechanical",
+    "plumbing":                 "Sanitary & Plumbing",
+    "sanitary_and_plumbing":    "Sanitary & Plumbing",
+    "site":                     "Excavation & Earthwork",
+    "excavation_and_earthwork": "Excavation & Earthwork",
+    "external":                 "External & Civil Works",
+    "external_and_civil_works": "External & Civil Works",
+    "demolitions":              "Demolition & Removal",
+    "demolition_and_removal":   "Demolition & Removal",
+    "preliminaries":            "Preliminary & General",
+    "preliminary_and_general":  "Preliminary & General",
+    "formwork":                 "Formwork",
+    "reinforcement":            "Reinforcement",
+    "flooring_and_tiling":      "Flooring & Tiling",
+    "testing_and_commissioning":"Testing & Commissioning",
+    "misc":                     "Miscellaneous",
+    "miscellaneous":            "Miscellaneous",
+}
+
+# Category slug → default unit
+_CATEGORY_TO_UNIT: dict[str, str] = {
+    "concrete_works":           "m³",
+    "piling_and_substructure":  "m³",
+    "brick_masonry":            "m²",
+    "plastering_and_rendering": "m²",
+    "painting_and_finishes":    "m²",
+    "roofing_and_ceiling":      "m²",
+    "doors_windows_and_glazing":"Nr",
+    "electrical_and_mechanical":"Nr",
+    "sanitary_and_plumbing":    "Nr",
+    "excavation_and_earthwork": "m³",
+    "external_and_civil_works": "m²",
+    "demolition_and_removal":   "m²",
+    "preliminary_and_general":  "Item",
+    "formwork":                 "m²",
+    "reinforcement":            "Kg",
+    "flooring_and_tiling":      "m²",
+    "testing_and_commissioning":"Item",
+    "miscellaneous":            "Item",
+}
+
+# Category slug → material type (matches quantity_calculator training)
+_CATEGORY_TO_MATERIAL_TYPE: dict[str, str] = {
+    "concrete_works":           "Concrete",
+    "piling_and_substructure":  "Concrete",
+    "brick_masonry":            "Masonry",
+    "plastering_and_rendering": "Masonry",
+    "painting_and_finishes":    "Paint/Chemical",
+    "roofing_and_ceiling":      "Ceiling/Roofing Sheet",
+    "doors_windows_and_glazing":"Aluminium/Glass",
+    "electrical_and_mechanical":"Electrical",
+    "sanitary_and_plumbing":    "Sanitary Ware",
+    "excavation_and_earthwork": "Earthwork/Aggregate",
+    "external_and_civil_works": "Paving",
+    "demolition_and_removal":   "General",
+    "preliminary_and_general":  "General",
+    "formwork":                 "Timber",
+    "reinforcement":            "Steel/Metal",
+    "flooring_and_tiling":      "Tiles",
+    "testing_and_commissioning":"General",
+    "miscellaneous":            "General",
+}
+
+# Units classified as discrete (counted items — Phase 10)
+_DISCRETE_UNITS: frozenset[str] = frozenset({
+    "nr", "nr.", "no", "no.", "item", "pair", "set", "each", "lot",
+})
+
+
+def _classify_unit_kind(unit: str) -> str:
+    """Return ``"discrete"`` or ``"continuous"`` based on the unit string."""
+    return "discrete" if unit.strip().lower() in _DISCRETE_UNITS else "continuous"
 
 
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-def _enrich_item(item: dict[str, Any], floors: int) -> dict[str, Any]:
-    """Ensure category/section are set and attach floors metadata."""
+def _enrich_item(item: dict[str, Any], floors: int, predictor_conf: dict[str, float] | None = None) -> dict[str, Any]:
+    """Ensure category/section are set and attach floors + Phase 2 metadata."""
     enriched = dict(item)
     description = enriched.get("description") or ""
 
@@ -165,6 +268,29 @@ def _enrich_item(item: dict[str, Any], floors: int) -> dict[str, Any]:
         enriched["section"] = _infer_section(description)
 
     enriched["floors"] = floors
+
+    # Phase 2: stable BOQ item contract metadata
+    cat = (enriched.get("category") or "misc").lower()
+    preferred_unit = _CATEGORY_TO_UNIT.get(cat, "Item")
+
+    if not enriched.get("work_category"):
+        enriched["work_category"] = _CATEGORY_TO_WORK_CATEGORY.get(cat, "Miscellaneous")
+    if not enriched.get("material_type"):
+        enriched["material_type"] = _CATEGORY_TO_MATERIAL_TYPE.get(cat, "General")
+    if not enriched.get("preferred_unit"):
+        enriched["preferred_unit"] = preferred_unit
+    if not enriched.get("unit_kind"):
+        enriched["unit_kind"] = _classify_unit_kind(preferred_unit)
+
+    # Preserve Item Predictor confidence (source_confidence)
+    if not enriched.get("source_confidence"):
+        if predictor_conf and description in predictor_conf:
+            enriched["source_confidence"] = predictor_conf[description]
+        elif enriched.get("source") == "item_predictor":
+            enriched["source_confidence"] = 0.70   # default when confidence unknown
+        else:
+            enriched["source_confidence"] = 0.60   # LLM-generated item baseline confidence
+
     return enriched
 
 

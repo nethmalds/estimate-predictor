@@ -147,9 +147,12 @@ class YOLOFloorplanDetector:
                     "bbox_px": [round(x1), round(y1), round(x2), round(y2)],
                 })
 
+        all_confs = [d["conf"] for d in raw]
+        avg_conf = round(sum(all_confs) / len(all_confs), 4) if all_confs else 0.0
+
         logger.info(
-            "yolo_detector done zones=%d doors=%d windows=%d raw=%d img=%dx%d",
-            len(rooms), doors, windows, len(raw), img_w, img_h,
+            "yolo_detector done zones=%d doors=%d windows=%d raw=%d avg_conf=%.3f img=%dx%d",
+            len(rooms), doors, windows, len(raw), avg_conf, img_w, img_h,
         )
 
         return {
@@ -159,6 +162,8 @@ class YOLOFloorplanDetector:
             "raw": raw,
             "img_w": img_w,
             "img_h": img_h,
+            "_yolo_avg_conf": avg_conf,
+            "_yolo_detection_count": len(raw),
         }
 
 
