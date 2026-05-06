@@ -27,10 +27,11 @@ Target encoding:
 
 Public API
 ----------
-predict_quantity(item: dict, project_info: dict) -> tuple[float, str, bool]
-    Returns (quantity, method_label, is_item_level) where:
-    - method_label = ``"quantity_predictor"`` (ML model) or ``"quantity_predictor"`` (no model loaded)
-    - is_item_level = True if an item-specific model was used, False if the global model was used.
+predict_quantity(item: dict, project_info: dict) -> dict
+    Returns a QuantityPrediction dict with keys:
+      quantity, method, is_item_level, model_scope,
+      prediction_confidence, feature_completeness,
+      unknown_feature_count, unknown_feature_names, allocation_mode.
 """
 from __future__ import annotations
 
@@ -77,16 +78,41 @@ def _try_load_quantity_predictor() -> None:
 def predict_quantity(
     item: dict[str, Any],
     project_info: dict[str, Any],
-) -> tuple[float, str, bool]:
+) -> dict[str, Any]:
     """Predict the quantity for a single BOQ item.
 
-    Uses the real Quantity Predictor if available. Returns (0.0, label, False) if not.
+    Uses the real Quantity Predictor if available.
+
+    Returns
+    -------
+    dict
+        ``QuantityPrediction`` with keys:
+          - ``quantity``             : float (≥ 0)
+          - ``method``               : str  ("quantity_predictor")
+          - ``is_item_level``        : bool
+          - ``model_scope``          : "item_level" | "global"
+          - ``prediction_confidence``: float 0–1
+          - ``feature_completeness`` : float 0–1  (1 − (u+d)/n)
+          - ``unknown_feature_count``: int
+          - ``unknown_feature_names``: list[str]
+          - ``allocation_mode``      : "direct" | "global_allocation"
     """
     _try_load_quantity_predictor()
 
     if _artifact is not None:
         return _predict_with_quantity_predictor(item, project_info)
-    return 0.0, "quantity_predictor", False
+
+    return {
+        "quantity":              0.0,
+        "method":                "quantity_predictor",
+        "is_item_level":         False,
+        "model_scope":           "none",
+        "prediction_confidence": 0.0,
+        "feature_completeness":  0.0,
+        "unknown_feature_count": 0,
+        "unknown_feature_names": [],
+        "allocation_mode":       "direct",
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -221,13 +247,14 @@ def _normalise_unit(raw: str) -> str:
     return stripped  # return as-is; will be encoded as 0 if unknown
 
 
-def _build_feature_array(row: dict[str, Any]) -> "Any":  # returns np.ndarray
+def _build_feature_array(row: dict[str, Any]) -> "tuple[Any, list[str]]":
     """Build the numpy feature vector expected by the model.
 
-    Replicates the notebook's ``encode_input`` helper:
-    - Numeric columns are taken directly as floats (with defaults).
-    - Categorical columns are integer-encoded using the stored LabelEncoders.
-      Unknown values are encoded as 0.
+    Returns
+    -------
+    (X, unknown_names)
+        * ``X``             — numpy array of shape (1, n_features)
+        * ``unknown_names`` — list of categorical column names whose value was unknown
     """
     import numpy as np  # type: ignore[import]
 
@@ -237,6 +264,7 @@ def _build_feature_array(row: dict[str, Any]) -> "Any":  # returns np.ndarray
     encoders: dict = art["label_encoders"]
 
     feats: list[float] = []
+    unknown_names: list[str] = []
 
     # Numeric features
     for col in num_cols:
@@ -250,15 +278,16 @@ def _build_feature_array(row: dict[str, Any]) -> "Any":  # returns np.ndarray
             feats.append(float(le.transform([val])[0]))
         else:
             feats.append(0.0)
+            unknown_names.append(col)
             logger.debug("quantity_predictor: unknown value col=%s val=%r", col, val)
 
-    return np.array(feats, dtype=float).reshape(1, -1)
+    return np.array(feats, dtype=float).reshape(1, -1), unknown_names
 
 
 def _predict_with_quantity_predictor(
     item: dict[str, Any],
     project_info: dict[str, Any],
-) -> tuple[float, str, bool]:
+) -> dict[str, Any]:
     """Run inference against the loaded quantity_predictor artifact.
 
     Strategy:
@@ -266,6 +295,7 @@ def _predict_with_quantity_predictor(
       2. If the item description matches a per-item model key, use that model.
       3. Otherwise use the global model.
       4. Inverse-transform via np.expm1() (model trained on log1p target).
+      5. Compute feature_completeness = 1 − (u + d) / max(n, 1).
     """
     try:
         import numpy as np  # type: ignore[import]
@@ -283,41 +313,26 @@ def _predict_with_quantity_predictor(
         log_area = math.log1p(area_m2)
         log_area_floor = math.log1p(area_per_floor)
 
-        # Pin to training year — using datetime.now() causes out-of-distribution drift
         year = _TRAINING_YEAR
         is_renovation = 0
 
-        # The item description is used both as a feature and as the per-item model key.
-        # BOQ items may store their description in 'description' OR 'Work_Item'.
         description: str = item.get("description") or item.get("Work_Item") or ""
-        # Normalise to lowercase+stripped to match notebook's Work_Item keys
         description_key: str = description.strip().lower()
 
-        # Map internal category slug → ML Work_Category label the model was trained on
         raw_category: str = (item.get("category") or "misc").lower()
         work_category: str = _SLUG_TO_WORK_CATEGORY.get(raw_category, "Concrete Works")
-        # If item already carries a proper Work_Category string (from BOQ generator), prefer it
         if item.get("work_category"):
             work_category = str(item["work_category"]).strip()
 
-        # Unit: honour item's unit when present; fall back to slug default.
-        # Always normalise through _normalise_unit so bytes match the label encoder.
         raw_unit: str = (item.get("unit") or "").strip()
         unit: str = _normalise_unit(raw_unit) if raw_unit else _SLUG_TO_DEFAULT_UNIT.get(raw_category, "m\u00b3")
 
-        # ----------------------------------------------------------------
-        # Refine Work_Category and Material_Type based on item description
-        # and unit — to match the training data labels more precisely.
-        # ----------------------------------------------------------------
         desc_lower = description.lower()
 
-        # Material_Type: honour item value first; then infer from description/category.
-        # Values must be exact label encoder classes.
         raw_material: str = (item.get("material_type") or "").strip()
         if raw_material:
             material_type: str = raw_material
         elif unit == "m\u00b2" and any(kw in desc_lower for kw in _FLOORING_KEYWORDS):
-            # Floor tiling/screed → use dedicated flooring category
             material_type = "Tiles"
             if not item.get("work_category"):
                 work_category = "Flooring & Tiling"
@@ -336,21 +351,14 @@ def _predict_with_quantity_predictor(
         else:
             material_type = _SLUG_TO_MATERIAL_TYPE.get(raw_category, "General")
 
-        # Normalised project-level categoricals
         project_type = _normalise_project_type(project_info.get("building_type"))
         budget_cat = _normalise_budget_category(parameters.get("finish_level"))
-        # Location and Soil_Type: use title-case to match training label format,
-        # but only capitalise first letter of each word (already what .title() does).
         location = str(parameters.get("location") or "Unknown").strip().title()
         soil_type = str(parameters.get("soil_type") or "Ordinary Soil").strip().title()
         roof_type = _normalise_roof_type(parameters.get("roof_type"))
         ceiling_type = _normalise_ceiling_type(parameters.get("ceiling_type"))
 
-        # ----------------------------------------------------------------
-        # Assemble feature row — must match model's feature_cols exactly
-        # ----------------------------------------------------------------
         row: dict[str, Any] = {
-            # Numeric
             "area_imputed":   area_m2,
             "log_area":       log_area,
             "area_per_floor": area_per_floor,
@@ -358,7 +366,6 @@ def _predict_with_quantity_predictor(
             "No. of Floors":  floors,
             "Year":           float(year),
             "is_renovation":  float(is_renovation),
-            # Categorical
             "Project_Type":   project_type,
             "Budget_Category": budget_cat,
             "Location":       location,
@@ -375,12 +382,19 @@ def _predict_with_quantity_predictor(
             raw_category, work_category, unit, material_type, area_m2, floors,
         )
 
-        X = _build_feature_array(row)
+        X, unknown_names = _build_feature_array(row)
 
         # ----------------------------------------------------------------
-        # Choose model: per-item first (exact key match), then global.
-        # The per-item model dict was built from Work_Item strings in the
-        # training notebook — try both exact and lowercased description.
+        # Feature completeness: f_m = 1 − (u + d) / max(n, 1)
+        # u = unknown categoricals, d = defaulted critical features (area=default)
+        # ----------------------------------------------------------------
+        n_total = len(art.get("cat_cols", [])) + len(art.get("num_cols", []))
+        u = len(unknown_names)
+        d = 1 if area_m2 == _NUM_DEFAULTS.get("area_imputed", 200.0) else 0
+        feature_completeness = round(max(1.0 - (u + d) / max(n_total, 1), 0.0), 4)
+
+        # ----------------------------------------------------------------
+        # Choose model: per-item first, then global
         # ----------------------------------------------------------------
         item_models: dict = art.get("item_models", {})
         item_model = (
@@ -391,21 +405,56 @@ def _predict_with_quantity_predictor(
 
         is_item_level = item_model is not None
         model = item_model if is_item_level else art.get("model")
+        model_scope = "item_level" if is_item_level else "global"
 
         if model is None:
             logger.warning("quantity_predictor: no global model in bundle")
-            return 0.0, "quantity_predictor", False
+            return {
+                "quantity":              0.0,
+                "method":                "quantity_predictor",
+                "is_item_level":         False,
+                "model_scope":           "none",
+                "prediction_confidence": 0.0,
+                "feature_completeness":  feature_completeness,
+                "unknown_feature_count": u,
+                "unknown_feature_names": unknown_names,
+                "allocation_mode":       "direct",
+            }
 
-        # Model was trained on log1p(qty) — inverse with expm1
         log_pred = float(model.predict(X)[0])
         raw_pred = float(np.expm1(log_pred))
-
         quantity = round(max(raw_pred, 0.0), 2)
-        return quantity, "quantity_predictor", is_item_level
+
+        # Scope factor: s_m = 1.0 for item-level, 0.75 for global
+        scope_factor = 1.0 if is_item_level else 0.75
+        # Prediction confidence = feature_completeness × scope_factor
+        prediction_confidence = round(feature_completeness * scope_factor, 4)
+
+        return {
+            "quantity":              quantity,
+            "method":                "quantity_predictor",
+            "is_item_level":         is_item_level,
+            "model_scope":           model_scope,
+            "prediction_confidence": prediction_confidence,
+            "feature_completeness":  feature_completeness,
+            "unknown_feature_count": u,
+            "unknown_feature_names": unknown_names,
+            "allocation_mode":       "direct",
+        }
 
     except Exception:
         logger.exception("quantity_predictor inference failed")
-        return 0.0, "quantity_predictor", False
+        return {
+            "quantity":              0.0,
+            "method":                "quantity_predictor",
+            "is_item_level":         False,
+            "model_scope":           "error",
+            "prediction_confidence": 0.0,
+            "feature_completeness":  0.0,
+            "unknown_feature_count": 0,
+            "unknown_feature_names": [],
+            "allocation_mode":       "direct",
+        }
 
 
 # ---------------------------------------------------------------------------

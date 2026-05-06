@@ -17,16 +17,21 @@ _SYSTEM_PROMPT = (
 
 
 _SCHEMA_HINT = {
-    "building_type": "string or null",
+    "building_type": "residential | commercial | industrial | mixed_use",
     "floors": "integer or null",
     "spaces": "array of strings",
     "parameters": {
-        "bedrooms": "integer or null",
-        "bathrooms": "integer or null",
-        "built_up_area": "string or null",
-        "finish_level": "string or null",
-        "roof_type": "string or null",
-        "ceiling_type": "string or null",
+        "built_up_area":        "string with unit or null",
+        "finish_level":         "standard | semi_luxury | luxury or null",
+        "structural_system":    "framed | load_bearing | hybrid or null",
+        "roof_type":            "rc_flat_slab | clay_tile | asbestos_sheet | metal_sheet | other or null",
+        "ceiling_type":         "gypsum_mineral_fibre | timber | asbestos_flat | concrete | other or null",
+        "location":             "string or null",
+        "soil_condition":       "normal | expansive | rocky | waterlogged or null",
+        "drainage_type":        "mains_sewer | septic_tank | soakpit | none or null",
+        "external_works_scope": "none | minimal | standard | extensive or null",
+        "bedrooms":             "integer or null (residential only)",
+        "bathrooms":            "integer or null (residential only)",
     },
     "explicit_parameters": "array of strings",
     "assumptions": "array of strings",
@@ -152,12 +157,17 @@ def _normalize_requirements_check(data: dict) -> dict:
 
 def _normalize_parameters(parameters: dict[str, Any]) -> dict:
     return {
-        "bedrooms": _coerce_int(parameters.get("bedrooms")),
-        "bathrooms": _coerce_int(parameters.get("bathrooms")),
-        "built_up_area": _coerce_value(parameters.get("built_up_area")),
-        "finish_level": _coerce_value(parameters.get("finish_level")),
-        "roof_type": _coerce_value(parameters.get("roof_type")),
-        "ceiling_type": _coerce_value(parameters.get("ceiling_type")),
+        "built_up_area":        _coerce_value(parameters.get("built_up_area")),
+        "finish_level":         _coerce_value(parameters.get("finish_level")),
+        "structural_system":    _coerce_value(parameters.get("structural_system")),
+        "roof_type":            _coerce_value(parameters.get("roof_type")),
+        "ceiling_type":         _coerce_value(parameters.get("ceiling_type")),
+        "location":             _coerce_value(parameters.get("location")),
+        "soil_condition":       _coerce_value(parameters.get("soil_condition")),
+        "drainage_type":        _coerce_value(parameters.get("drainage_type")),
+        "external_works_scope": _coerce_value(parameters.get("external_works_scope")),
+        "bedrooms":             _coerce_int(parameters.get("bedrooms")),
+        "bathrooms":            _coerce_int(parameters.get("bathrooms")),
     }
 
 

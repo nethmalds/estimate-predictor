@@ -1,24 +1,48 @@
 """Quantity Take-Off Engine — branching compute logic.
 
+Stage decomposition (Phase 4):
+  1. Candidate generation — collect all available quantity estimates per item.
+  2. Reconciliation        — fuse candidates with unit-aware confidence weighting.
+  3. Validation            — post-reconciliation quality checks.
+
 Branch A (floorplan geometry available):
-  1. Apply geometry/rule-based formulas for each BOQ item category.
-  2. Collect items where no geometry rule applied.
-  3. Call Quantity Predictor ONLY for those missing items.
+  Candidate sources: geometry / rule_based  +  ML (item-level fused in, global for fallback).
   Tags: ``quantity_source`` = ``"geometry"`` | ``"rule_based"`` | ``"quantity_predictor"``
 
 Branch B (no floorplan):
-  Call Quantity Predictor for ALL items.
-  Tags: ``quantity_source`` = ``"quantity_predictor"``
+  Candidate sources: parametric (parameter-driven rules)  +  ML.
+  Tags: ``quantity_source`` = ``"parametric"`` | ``"quantity_predictor"``
+
+Extra per-item fields:
+  ``quantity_confidence_score``, ``quantity_candidates``,
+  ``reconciliation_summary``, ``quantity_warning`` (from validator)
 """
 from __future__ import annotations
 
 from typing import Any
 
-from services.quantity_gen_process.rule_based_calculator import calculate_from_geometry
+from services.quantity_gen_process.rule_based_calculator import (
+    calculate_from_geometry,
+    calculate_parametric,
+)
 from services.quantity_gen_process.quantity_calculator import predict_quantity
+from services.quantity_gen_process.confidence_scoring import (
+    score_geometry_confidence,
+    fuse_candidates,
+    candidate_weight,
+)
+from services.quantity_gen_process.quantity_validator import validate_quantity
 from core.logging.logger import get_logger
 
 logger = get_logger(__name__)
+
+# Categories whose quantity is a QS convention (lump sum = 1.0) — skip ML fusion.
+_LUMP_SUM_CATEGORIES: frozenset[str] = frozenset({
+    "preliminary_and_general",
+    "miscellaneous",
+    "other",
+    "testing_and_commissioning",
+})
 
 
 def compute_quantities(
@@ -40,7 +64,9 @@ def compute_quantities(
     Returns
     -------
     list[dict]
-        Each item enriched with ``quantity`` and ``quantity_source``.
+        Each item enriched with ``quantity``, ``quantity_source``,
+        ``quantity_confidence_score``, and (for geometry branch) optional
+        ``quantity_candidates`` and ``quantity_warning`` fields.
     """
     parameters: dict = project_info.get("parameters") or {}
     floors: int = max(int(project_info.get("floors") or 1), 1)
@@ -66,26 +92,64 @@ def _compute_with_geometry(
     floors: int,
     parameters: dict,
 ) -> list[dict]:
+    # Stage 1: compute geometry confidence (feeds reconciliation weights)
+    geo_conf = score_geometry_confidence(geometry)
+    logger.info("qto_engine geo_conf=%.4f", geo_conf)
+
     computed: list[dict] = []
     quantity_predictor_needed: list[dict] = []
 
     for item in boq_items:
-        qty, source = calculate_from_geometry(
+        category = (item.get("category") or "misc").lower()
+        item_unit = item.get("unit") or item.get("preferred_unit") or ""
+
+        # ── Stage 1: candidate generation ───────────────────────────────
+        geo_qty, geo_source = calculate_from_geometry(
             item,
             geometry,
             floors=floors,
             parameters=parameters,
         )
         item_copy = dict(item)
-        if qty is not None:
-            item_copy["quantity"] = qty
-            item_copy["quantity_source"] = source
+
+        if geo_qty is not None:
+            # We have a geometry/rule candidate
+            candidates: list[tuple[float, str, bool]] = [(geo_qty, geo_source, False)]
+            ml_diag: dict = {}
+
+            if category not in _LUMP_SUM_CATEGORIES:
+                # Stage 1 (continued): ML candidate generation
+                ml_result = predict_quantity(item, project_info)
+                ml_qty = ml_result["quantity"]
+                is_item_level = ml_result["is_item_level"]
+                ml_diag = ml_result
+                if is_item_level and ml_qty > 0:
+                    candidates.append((ml_qty, "quantity_predictor", True))
+
+            # ── Stage 2: reconciliation ──────────────────────────────────
+            fused_qty, conf, dominant_src, cands_meta = fuse_candidates(
+                candidates, geo_conf, unit=item_unit, ml_diagnostics=ml_diag
+            )
+
+            # Build Phase 3 reconciliation summary
+            item_copy["quantity"]               = fused_qty
+            item_copy["final_quantity"]         = fused_qty
+            item_copy["quantity_source"]        = dominant_src
+            item_copy["quantity_confidence_score"] = conf
+            item_copy["quantity_confidence"]    = conf
+            item_copy["quantity_candidates"]    = cands_meta
+            item_copy["reconciliation_summary"] = _build_reconciliation_summary(
+                cands_meta, fused_qty, dominant_src, item_unit
+            )
+
+            # ── Stage 3: per-item validation ────────────────────────────
+            item_copy = validate_quantity(item_copy, geometry, floors)
             computed.append(item_copy)
         else:
             quantity_predictor_needed.append(item_copy)
 
     if quantity_predictor_needed:
-        _resolve_quantity_predictor_items(quantity_predictor_needed, project_info)
+        _resolve_quantity_predictor_items(quantity_predictor_needed, project_info, geo_conf, geometry, floors)
         computed.extend(quantity_predictor_needed)
 
     geo_count = len(boq_items) - len(quantity_predictor_needed)
@@ -98,15 +162,18 @@ def _compute_with_geometry(
 
 
 # ---------------------------------------------------------------------------
-# Branch B — No floorplan
+# Branch B — No floorplan (Phase 5)
 # ---------------------------------------------------------------------------
 
 def _compute_quantity_predictor_all(
     boq_items: list[dict],
     project_info: dict,
 ) -> list[dict]:
+    """No-floorplan path: parametric candidates + ML candidates, then reconcile."""
     computed: list[dict] = [dict(item) for item in boq_items]
-    _resolve_quantity_predictor_items(computed, project_info)
+    parameters = project_info.get("parameters") or {}
+    floors = max(int(project_info.get("floors") or 1), 1)
+    _resolve_quantity_predictor_items(computed, project_info, geo_conf=0.0, geometry=None, floors=floors)
     return computed
 
 
@@ -125,59 +192,142 @@ def _geometry_is_usable(geometry: dict | None) -> bool:
     )
 
 
-def _resolve_quantity_predictor_items(items_to_resolve: list[dict], project_info: dict) -> None:
-    """Run quantity predictor on items, distributing category-level predictions by QS weights.
+def _resolve_quantity_predictor_items(
+    items_to_resolve: list[dict],
+    project_info: dict,
+    geo_conf: float = 0.0,
+    geometry: dict | None = None,
+    floors: int = 1,
+) -> None:
+    """Generate candidates and reconcile for items without a geometry candidate.
 
-    Preliminaries and misc items are lump-sum by QS convention and are assigned
-    quantity = 1.0 directly without passing through the ML model.
+    For the no-floorplan path (Phase 5): runs parametric candidate generation
+    and ML candidate generation in parallel, then reconciles the results.
+    For the geometry path: ML-only path for items where no geometry rule applied.
+
+    Lump-sum categories are assigned quantity = 1.0 (QS convention).
     """
-    _LUMP_SUM_CATEGORIES = {"preliminary_and_general", "miscellaneous", "other", "testing_and_commissioning"}
+    _LUMP_SUM = {"preliminary_and_general", "miscellaneous", "other", "testing_and_commissioning"}
 
     distribution_groups: dict[str, list[dict]] = {}
 
     for item in items_to_resolve:
         category = (item.get("category") or "misc").lower()
+        item_unit = item.get("unit") or item.get("preferred_unit") or ""
 
-        # ── Rule-based lump-sum items ────────────────────────────────────
-        if category in _LUMP_SUM_CATEGORIES:
-            item["quantity"] = 1.0
-            item["quantity_source"] = "rule_based"
+        # ── Lump-sum convention ───────────────────────────────────────────
+        if category in _LUMP_SUM:
+            item["quantity"]                  = 1.0
+            item["final_quantity"]            = 1.0
+            item["quantity_source"]           = "rule_based"
+            item["quantity_confidence_score"] = 1.0
+            item["quantity_confidence"]       = 1.0
+            item["quantity_candidates"]       = [{
+                "candidate_type": "rule_based",
+                "quantity": 1.0, "unit": item_unit, "confidence": 1.0,
+                "assumptions": ["lump_sum_convention"], "method": "rule_based",
+                "diagnostics": {}, "requires_review": False,
+                "source_payload": {"source": "rule_based", "allocation_mode": "direct"},
+            }]
+            item["reconciliation_summary"] = {
+                "method": "lump_sum",
+                "source": "rule_based",
+                "candidate_count": 1,
+                "disagreement_score": 0.0,
+                "review_flags": [],
+            }
             continue
 
-        # ── ML prediction ────────────────────────────────────────────────
-        qty, source, is_item_level = predict_quantity(item, project_info)
-        item["quantity_source"] = source
-        if is_item_level:
-            item["quantity"] = qty
-        else:
-            item["_raw_cat_qty"] = qty
-            if category not in distribution_groups:
-                distribution_groups[category] = []
-            distribution_groups[category].append(item)
+        # ── Phase 5: parametric candidate (no floorplan path) ──────────────
+        candidates: list[tuple[float, str, bool]] = []
+        param_qty, param_src = calculate_parametric(item, project_info)
+        if param_qty is not None and param_qty > 0:
+            candidates.append((param_qty, "parametric", False))
 
-    # Distribute category-level ML predictions among items using QS weights
+        # ── ML candidate ────────────────────────────────────────────────────
+        ml_result = predict_quantity(item, project_info)
+        ml_qty    = ml_result["quantity"]
+        is_item_level = ml_result["is_item_level"]
+        ml_diag   = ml_result
+
+        if is_item_level and ml_qty > 0:
+            item["_ml_direct"] = True
+            candidates.append((ml_qty, "quantity_predictor", True))
+            # Stage 2: reconcile directly
+            fused_qty, conf, dominant_src, cands_meta = fuse_candidates(
+                candidates, geo_conf, unit=item_unit, ml_diagnostics=ml_diag
+            )
+            item["quantity"]                  = fused_qty
+            item["final_quantity"]            = fused_qty
+            item["quantity_source"]           = dominant_src
+            item["quantity_confidence_score"] = conf
+            item["quantity_confidence"]       = conf
+            item["quantity_candidates"]       = cands_meta
+            item["reconciliation_summary"]    = _build_reconciliation_summary(
+                cands_meta, fused_qty, dominant_src, item_unit
+            )
+            # Stage 3: validate
+            validate_quantity(item, geometry, floors)
+        else:
+            # Global ML model → distribute category totals later
+            item["_raw_cat_qty"]   = ml_qty
+            item["_ml_diag"]       = ml_diag
+            item["_candidates"]    = candidates   # may include parametric
+            item["_item_unit"]     = item_unit
+            cat = (item.get("category") or "misc").lower()
+            if cat not in distribution_groups:
+                distribution_groups[cat] = []
+            distribution_groups[cat].append(item)
+
+    # ── Distribute global ML predictions by QS weights ───────────────────────
     for category, group_items in distribution_groups.items():
         if not group_items:
             continue
 
         category_total_qty = group_items[0]["_raw_cat_qty"]
-
         if category_total_qty <= 0:
-            logger.warning(
-                "qto_engine ML returned non-positive qty=%.4f for category=%s",
-                category_total_qty,
-                category,
-            )
+            logger.warning("qto_engine ML returned non-positive qty=%.4f for category=%s",
+                           category_total_qty, category)
 
         weights = [_get_qs_weight(category, item.get("description", "")) for item in group_items]
         total_weight = sum(weights)
 
         for item, weight in zip(group_items, weights):
+            item_unit     = item.pop("_item_unit", "")
+            ml_diag       = item.pop("_ml_diag", {})
+            pre_candidates = item.pop("_candidates", [])
+            item.pop("_raw_cat_qty", None)
+            item.pop("_ml_direct", None)
+
             if total_weight > 0:
-                item["quantity"] = round(category_total_qty * (weight / total_weight), 2)
+                alloc_qty = round(category_total_qty * (weight / total_weight), 2)
             else:
-                item["quantity"] = round(category_total_qty / len(group_items), 2)
-            del item["_raw_cat_qty"]
+                alloc_qty = round(category_total_qty / len(group_items), 2)
+
+            # Mark as global_allocation
+            ml_diag_copy = dict(ml_diag)
+            ml_diag_copy["allocation_mode"] = "global_allocation"
+
+            candidates = list(pre_candidates) + [(alloc_qty, "quantity_predictor", False)]
+            fused_qty, conf, dominant_src, cands_meta = fuse_candidates(
+                candidates, geo_conf, unit=item_unit, ml_diagnostics=ml_diag_copy
+            )
+            item["quantity"]                  = fused_qty
+            item["final_quantity"]            = fused_qty
+            item["quantity_source"]           = dominant_src
+            item["quantity_confidence_score"] = conf
+            item["quantity_confidence"]       = conf
+            item["quantity_candidates"]       = cands_meta
+            item["reconciliation_summary"]    = _build_reconciliation_summary(
+                cands_meta, fused_qty, dominant_src, item_unit
+            )
+            # Stage 3: validate
+            validate_quantity(item, geometry, floors)
+
+    # Clean up temp keys
+    for item in items_to_resolve:
+        for k in ("_ml_direct", "_raw_cat_qty", "_ml_diag", "_candidates", "_item_unit"):
+            item.pop(k, None)
 
 
 def _get_qs_weight(category: str, description: str) -> float:
@@ -251,3 +401,102 @@ def _get_qs_weight(category: str, description: str) -> float:
             return weight
 
     return 10.0  # Default weight if no keywords match
+
+
+# ---------------------------------------------------------------------------
+# Phase 11: Reconciliation summary with disagreement score and review flags
+# ---------------------------------------------------------------------------
+
+# Disagreement threshold above which items are flagged for review
+_DISAGREEMENT_REVIEW_THRESHOLD = 0.50
+
+
+def _build_reconciliation_summary(
+    cands_meta: list[dict],
+    fused_qty: float,
+    dominant_src: str,
+    unit: str,
+) -> dict:
+    """Build a Phase 11 reconciliation summary with disagreement score and review flags.
+
+    Parameters
+    ----------
+    cands_meta:
+        Candidate metadata list from ``fuse_candidates``.
+    fused_qty:
+        The reconciled final quantity.
+    dominant_src:
+        The source label of the highest-weight candidate.
+    unit:
+        BOQ item unit string.
+
+    Returns
+    -------
+    dict
+        ``reconciliation_summary`` with keys:
+          - ``method``            : "weighted_fusion" | "discrete_winner" | "lump_sum"
+          - ``source``            : dominant source label
+          - ``candidate_count``   : int
+          - ``disagreement_score``: float 0–∞ (δ = (max−min)/q̄)
+          - ``reconciliation_reason``: str
+          - ``review_flags``      : list[str]
+    """
+    n = len(cands_meta)
+    if n == 0:
+        return {
+            "method": "none",
+            "source": dominant_src,
+            "candidate_count": 0,
+            "disagreement_score": 0.0,
+            "reconciliation_reason": "no_candidates",
+            "review_flags": ["no_candidates"],
+        }
+
+    # Compute disagreement score: δ = (max(q_i) − min(q_i)) / max(q̄, 1)
+    qs = [c["quantity"] for c in cands_meta if c["quantity"] > 0]
+    if len(qs) > 1:
+        q_bar = sum(qs) / len(qs)
+        delta = (max(qs) - min(qs)) / max(q_bar, 1.0)
+    else:
+        delta = 0.0
+
+    # Determine reconciliation method
+    has_discrete_winner = any(
+        c.get("diagnostics", {}).get("discrete_winner")
+        for c in cands_meta
+    )
+    if n == 1:
+        method = "single_candidate"
+        reason = f"only_{cands_meta[0]['candidate_type']}_available"
+    elif has_discrete_winner:
+        method = "discrete_winner"
+        reason = f"discrete_unit_{unit}_winner_selection"
+    else:
+        method = "weighted_fusion"
+        reason = f"{n}_candidates_weighted_fusion"
+
+    # Build review flags
+    review_flags: list[str] = []
+    if delta >= _DISAGREEMENT_REVIEW_THRESHOLD:
+        review_flags.append(f"high_disagreement_{delta:.2f}")
+
+    # Flag if the winner is a low-confidence global-allocation result
+    winner_is_global = dominant_src == "quantity_predictor" and not any(
+        c["candidate_type"] == "ml_item_level" and c["method"] == dominant_src
+        for c in cands_meta
+    )
+    if winner_is_global and n == 1:
+        review_flags.append("global_allocation_only")
+
+    # Flag any candidate marked requires_review
+    if any(c.get("requires_review") for c in cands_meta):
+        review_flags.append("candidate_requires_review")
+
+    return {
+        "method":               method,
+        "source":               dominant_src,
+        "candidate_count":      n,
+        "disagreement_score":   round(delta, 4),
+        "reconciliation_reason": reason,
+        "review_flags":         review_flags,
+    }

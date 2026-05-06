@@ -1,97 +1,62 @@
-export type EstimationRequest = {
-	description: string;
-	floorplanImageUrl?: string | null;
-};
-
-export type ClarificationStartResponse = {
-	status: "session_started";
-	session_id: string;
-	needs_clarification: boolean;
-};
-
-export type ClarificationAnswerResponse = {
-	status: string;
-};
-
 export const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000").replace(/\/$/, "");
 
 export const buildUrl = (path: string) => `${API_BASE_URL}${path}`;
 
-const buildRequestBody = (payload: EstimationRequest) => {
-	const body: Record<string, unknown> = {
-		description: payload.description,
-	};
+// ─── Wizard form API ──────────────────────────────────────────────────────────
 
-	if (payload.floorplanImageUrl) {
-		body.floorplan_image_url = payload.floorplanImageUrl;
-	}
-
-	return body;
+export type WizardSubmitResponse = {
+	session_id: string;
+	status: string;
 };
 
-export async function startClarificationSession(
-	payload: EstimationRequest,
+export type WizardValidateResponse = {
+	valid: boolean;
+	errors: Record<string, string>;
+};
+
+export async function validateWizardForm(
+	payload: Record<string, unknown>,
 	options?: { signal?: AbortSignal }
-): Promise<ClarificationStartResponse> {
-	const response = await fetch(buildUrl("/api/estimate-project/clarification/start"), {
+): Promise<WizardValidateResponse> {
+	const response = await fetch(buildUrl("/api/estimate-project/form/validate"), {
 		method: "POST",
-		headers: {
-			"Content-Type": "application/json",
-		},
-		body: JSON.stringify(buildRequestBody(payload)),
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ payload }),
 		signal: options?.signal,
 	});
-
 	if (!response.ok) {
-		let message = "Request failed";
-
+		let message = "Validation request failed";
 		try {
 			const data = await response.json();
-			if (typeof data?.detail === "string") {
-				message = data.detail;
-			}
-		} catch {
-			// Ignore JSON parse errors and use the fallback message.
-		}
-
+			if (typeof data?.detail === "string") message = data.detail;
+		} catch { /* ignore */ }
 		throw new Error(message);
 	}
-
 	return response.json();
 }
 
-export async function submitClarificationAnswer(
-	sessionId: string,
-	answer: string,
+export async function submitWizardForm(
+	payload: Record<string, unknown>,
 	options?: { signal?: AbortSignal }
-): Promise<ClarificationAnswerResponse> {
-	const response = await fetch(buildUrl(`/api/estimate-project/clarification/${sessionId}/answer`), {
+): Promise<WizardSubmitResponse> {
+	const response = await fetch(buildUrl("/api/estimate-project/form/submit"), {
 		method: "POST",
-		headers: {
-			"Content-Type": "application/json",
-		},
-		body: JSON.stringify({ answer }),
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify(payload),
 		signal: options?.signal,
 	});
-
 	if (!response.ok) {
-		let message = "Request failed";
-
+		let message = "Submission failed";
 		try {
 			const data = await response.json();
-			if (typeof data?.detail === "string") {
-				message = data.detail;
-			}
-		} catch {
-			// Ignore JSON parse errors and use the fallback message.
-		}
-
+			if (typeof data?.detail === "string") message = data.detail;
+			else if (data?.detail?.message) message = data.detail.message;
+		} catch { /* ignore */ }
 		throw new Error(message);
 	}
-
 	return response.json();
 }
 
-export function openClarificationStream(sessionId: string): EventSource {
-	return new EventSource(buildUrl(`/api/estimate-project/clarification/stream/${sessionId}`));
+export function openFormEstimateStream(sessionId: string): EventSource {
+	return new EventSource(buildUrl(`/api/estimate-project/form/stream/${sessionId}`));
 }

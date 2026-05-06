@@ -1,10 +1,37 @@
-Use the user description and clarification answers to extract project details.
-Return only JSON with keys: building_type, floors, spaces, parameters, explicit_parameters, assumptions.
-The parameters object must contain bedrooms, bathrooms, built_up_area, finish_level, roof_type.
-Building type is always residential; use "residential" if missing.
+Use the original project description and the user's clarification answers to extract final structured project details.
+Prefer explicit values from the clarification answers over inferences from the original description.
+Explicit form values from clarifications ALWAYS take precedence over description inferences.
+Return only valid JSON with the exact schema. Use null for any still-unknown value.
+
+Building type must be one of: residential, commercial, industrial, mixed_use.
+Include bedrooms and bathrooms ONLY when building_type is "residential".
 
 Description:
 ${description}
 
-Clarifications:
+Clarification Answers:
 ${clarifications}
+
+Return JSON with this exact schema:
+{
+  "building_type": "<residential | commercial | industrial | mixed_use>",
+  "floors": <integer or null>,
+  "spaces": ["<room or space name>", ...],
+  "parameters": {
+    "built_up_area":        "<string with unit e.g. '180 m2' or null>",
+    "finish_level":         "<standard | semi_luxury | luxury or null>",
+    "structural_system":    "<framed | load_bearing | hybrid or null>",
+    "roof_type":            "<rc_flat_slab | clay_tile | asbestos_sheet | metal_sheet | other or null>",
+    "ceiling_type":         "<gypsum_mineral_fibre | timber | asbestos_flat | concrete | other or null>",
+    "location":             "<Sri Lankan district or city or null>",
+    "soil_condition":       "<normal | expansive | rocky | waterlogged or null>",
+    "drainage_type":        "<mains_sewer | septic_tank | soakpit | none or null>",
+    "external_works_scope": "<none | minimal | standard | extensive or null>",
+    "bedrooms":             <integer or null — residential only>,
+    "bathrooms":            <integer or null — residential only>
+  },
+  "explicit_parameters": ["<parameter names confirmed by the user in clarifications>"],
+  "assumptions":         ["<parameter values that were assumed or inferred>"]
+}
+
+Return JSON only. No markdown, no explanation.

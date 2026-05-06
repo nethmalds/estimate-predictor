@@ -78,6 +78,19 @@ def predict_boq_items(project_info: dict) -> list[str]:
 
     Returns a deduplicated list of BSR item description strings.
     """
+    return [entry["description"] for entry in predict_boq_items_with_confidence(project_info)]
+
+
+def predict_boq_items_with_confidence(project_info: dict) -> list[dict]:
+    """Predict BOQ work items and preserve per-item confidence scores.
+
+    Returns
+    -------
+    list[dict]
+        Each entry: ``{"description": str, "source_confidence": float,
+        "predicted_category": str}``
+        sorted by descending confidence.
+    """
     _load_model()
 
     import numpy as np  # type: ignore[import]
@@ -162,23 +175,38 @@ def predict_boq_items(project_info: dict) -> list[str]:
 
     # -----------------------------------------------------------------------
     # Expand categories → item descriptions via cat_to_items (up to 10 each)
+    # Preserve per-item confidence from the category probability.
     # -----------------------------------------------------------------------
-    items: set[str] = set()
+    item_to_cat_conf: dict[str, tuple[str, float]] = {}  # desc → (category, conf)
     for cat in predicted_categories:
+        cat_conf = probs.get(cat, 0.0)
         cat_items = cat_to_items.get(cat, [])
         for item_desc in cat_items[:10]:
-            items.add(item_desc)
+            if item_desc not in item_to_cat_conf:
+                item_to_cat_conf[item_desc] = (cat, cat_conf)
 
     # If cat_to_items is empty fall back to returning category names directly
-    if not items and predicted_categories:
-        items = {cat.lower() for cat in predicted_categories}
+    if not item_to_cat_conf and predicted_categories:
+        for cat in predicted_categories:
+            item_to_cat_conf[cat.lower()] = (cat, probs.get(cat, 0.0))
 
     # -----------------------------------------------------------------------
     # Post-prediction business rules
     # -----------------------------------------------------------------------
-    items = _apply_rules(project_info, items)
+    plain_items = _apply_rules(project_info, set(item_to_cat_conf.keys()))
 
-    result = sorted(items)
+    result: list[dict] = sorted(
+        [
+            {
+                "description":       desc,
+                "source_confidence": round(item_to_cat_conf.get(desc, ("", 0.0))[1], 4),
+                "predicted_category": item_to_cat_conf.get(desc, (desc, 0.0))[0],
+            }
+            for desc in plain_items
+        ],
+        key=lambda d: d["source_confidence"],
+        reverse=True,
+    )
     logger.info("item_predictor_predict items=%d", len(result))
     return result
 
@@ -188,6 +216,10 @@ def predict_boq_items(project_info: dict) -> list[str]:
 # ---------------------------------------------------------------------------
 
 _BUDGET_MAP: dict[str, str] = {
+    # MVED canonical values
+    "basic":     "standard",
+    "high_end":  "luxury",
+    # Legacy / free-text values
     "extra low budget": "standard",
     "low budget": "standard",
     "normal": "standard",
@@ -208,6 +240,12 @@ _BUDGET_MAP: dict[str, str] = {
 #   Roof_Type    : ['asbestos sheet', 'clay tile', 'rc flat slab', 'unknown']
 #   Ceiling_Type : ['asbestos flat', 'gypsum/mineral fibre', 'lunumidella timber', 'unknown']
 _ROOF_TYPE_MAP: dict[str, str] = {
+    # MVED canonical values
+    "flat_slab":    "rc flat slab",
+    "pitched":      "clay tile",
+    "half_pitched": "clay tile",
+    "metal_sheet":  "unknown",
+    # Legacy / free-text values
     "clay tile": "clay tile",
     "clay": "clay tile",
     "tile": "clay tile",
@@ -224,11 +262,14 @@ _ROOF_TYPE_MAP: dict[str, str] = {
 # Ceiling label encoder classes in the artifact
 # Map common user inputs → one of the four known classes
 _CEILING_TYPE_MAP: dict[str, str] = {
+    # MVED canonical values
+    "board":    "gypsum/mineral fibre",   # generic board → closest class
+    # Legacy / free-text values
     "gypsum": "gypsum/mineral fibre",
     "gypsum board": "gypsum/mineral fibre",
     "gypsum/mineral fibre": "gypsum/mineral fibre",
     "mineral fibre": "gypsum/mineral fibre",
-    "pvc": "gypsum/mineral fibre",          # closest class
+    "pvc": "gypsum/mineral fibre",
     "asbestos": "asbestos flat",
     "asbestos flat": "asbestos flat",
     "asbestos sheet": "asbestos flat",

@@ -4,8 +4,8 @@ const f = createUploadthing();
 
 export const ourFileRouter = {
   floorplanUploader: f({
-    image: { maxFileSize: "8MB", maxFileCount: 1 },
-    pdf: { maxFileSize: "8MB", maxFileCount: 1 },
+    image: { maxFileSize: "8MB", maxFileCount: 10 },
+    pdf: { maxFileSize: "8MB", maxFileCount: 10 },
   })
     .middleware(async () => {
       // No auth required for this project

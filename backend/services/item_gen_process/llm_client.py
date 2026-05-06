@@ -88,11 +88,15 @@ def gap_fill_boq_items(
     baseline_items: list[dict],
     item_predictor_items: list[str],
 ) -> list[dict]:
-    """LLM Comparison & Gap Fill — add ONLY items from the predictor that are
-    genuinely missing from the LLM baseline.
+    """Final BOQ reconciliation — returns the COMPLETE final item list.
+
+    The LLM receives the baseline BOQ plus Item Predictor candidates and
+    returns a single reconciled list after adding missing items, removing
+    irrelevant or conflicting ones, deduplicating semantically, and
+    normalizing all descriptions to BSR style.
     """
     logger.info(
-        "llm_call fn=gap_fill_boq_items baseline=%d predictor=%d",
+        "llm_call fn=reconcile_boq baseline=%d predictor=%d",
         len(baseline_items),
         len(item_predictor_items),
     )
@@ -108,32 +112,12 @@ def gap_fill_boq_items(
     ]
     content = chat(messages, stream=False)
     parsed = _safe_json_loads(content)
-    added = parsed.get("added_items") if isinstance(parsed, dict) else None
-    if not isinstance(added, list):
-        logger.warning("llm_call fn=gap_fill_boq_items returned no added_items list")
-        return []
-    result = _normalize_boq_item_list(added)
-    logger.info("llm_call fn=gap_fill_boq_items added=%d", len(result))
-    return result
-
-
-def refine_boq_items(project_info: dict, items: list[dict]) -> list[dict]:
-    """Post-processing pass — clean descriptions and normalise categories."""
-    logger.info("llm_call fn=refine_boq_items items=%d", len(items))
-    payload = json.dumps({"project_info": project_info, "items": items}, ensure_ascii=True)
-    prompt = _render_template("refine_boq_items.txt", payload=payload)
-    messages = [
-        {"role": "system", "content": _SYSTEM_PROMPT},
-        {"role": "user", "content": prompt},
-    ]
-    content = chat(messages, stream=False)
-    parsed = _safe_json_loads(content)
-    items_out = parsed.get("items") if isinstance(parsed, dict) else None
-    if not isinstance(items_out, list):
-        logger.warning("llm_call fn=refine_boq_items returned no items list")
-        return items
-    result = _normalize_boq_item_list(items_out)
-    logger.info("llm_call fn=refine_boq_items output=%d", len(result))
+    items = parsed.get("items") if isinstance(parsed, dict) else None
+    if not isinstance(items, list):
+        logger.warning("llm_call fn=reconcile_boq returned no items list — falling back to baseline")
+        return baseline_items
+    result = _normalize_boq_item_list(items)
+    logger.info("llm_call fn=reconcile_boq final_items=%d", len(result))
     return result
 
 

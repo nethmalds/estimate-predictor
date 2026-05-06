@@ -19,6 +19,17 @@ from services.floorplan_process.geometry_extraction.yolo_detector import (
 logger = get_logger(__name__)
 
 
+def get_detection_confidence(image_path: str) -> float:
+    """Return the average YOLO detection confidence for *image_path* (0–1).
+
+    Calls the LRU-cached ``detect()`` so there is no extra inference cost
+    when called after ``detect_openings`` or ``extract_room_boundaries``.
+    Returns 0.0 when no detections were found.
+    """
+    result = detect(image_path)
+    return float(result.get("_yolo_avg_conf", 0.0))
+
+
 def preprocess_image(image_path: str) -> dict:
     """Validate the image file and return basic metadata."""
     p = Path(image_path)
