@@ -17,7 +17,7 @@ _SYSTEM_PROMPT = (
 
 
 _SCHEMA_HINT = {
-    "building_type": "residential | commercial | industrial | mixed_use",
+    "building_type": "residential | commercial | industrial",
     "floors": "integer or null",
     "spaces": "array of strings",
     "parameters": {

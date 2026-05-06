@@ -61,11 +61,39 @@ logger = get_logger(__name__)
 _DEFAULT_FLOOR_HEIGHT_M = 3.0
 
 
+def _rasterize_pdf(pdf_path: str) -> str:
+    """Rasterize the first page of a PDF to a PNG file beside the original.
+
+    Returns the path to the rasterized PNG.  Requires PyMuPDF (``fitz``).
+    """
+    try:
+        import fitz  # PyMuPDF
+    except ImportError as exc:
+        raise ImportError(
+            "PyMuPDF is required for PDF rasterization. "
+            "Install with: pip install PyMuPDF"
+        ) from exc
+
+    png_path = pdf_path.rsplit(".", 1)[0] + "_p1.png"
+    doc = fitz.open(pdf_path)
+    try:
+        page = doc[0]
+        mat = fitz.Matrix(2.0, 2.0)  # 2× scale → ~144 dpi for crisp OCR
+        pix = page.get_pixmap(matrix=mat)
+        pix.save(png_path)
+    finally:
+        doc.close()
+    logger.info("floorplan_orchestrator pdf_rasterized pdf=%s png=%s", pdf_path, png_path)
+    return png_path
+
+
 def run_floorplan_pipeline(image_path: str) -> dict:
     """Run the full CV pipeline on *image_path* (local path or remote URL).
 
     If *image_path* is an http(s) URL it is downloaded and cached locally
     using ``image_cache.download_and_cache`` before processing.
+    PDF files are rasterized to PNG before OCR/YOLO so the full geometry
+    pipeline can operate on a standard raster image.
 
     Returns
     -------
@@ -77,6 +105,11 @@ def run_floorplan_pipeline(image_path: str) -> dict:
     if image_path.startswith(("http://", "https://")):
         logger.info("floorplan_orchestrator resolving remote url=%s", image_path)
         image_path = download_and_cache(image_path)
+
+    # ── Rasterize PDF to PNG before OCR/YOLO ────────────────────────────────
+    if image_path.lower().endswith(".pdf"):
+        logger.info("floorplan_orchestrator rasterizing pdf path=%s", image_path)
+        image_path = _rasterize_pdf(image_path)
 
     logger.info("floorplan_orchestrator start image_path=%s", image_path)
 

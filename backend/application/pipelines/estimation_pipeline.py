@@ -20,12 +20,6 @@ import time
 from contextlib import contextmanager
 from typing import Callable, Iterator
 
-from services.clarification_process.service import (
-    extract_project_info,
-    check_requirements,
-    find_missing_fields,
-    build_clarification_questions,
-)
 from services.clarification_process.clarification_agent import apply_defaults
 from services.item_gen_process.service import build_final_boq_items
 from services.floorplan_process.service import run_pipeline as _run_floorplan_facade
@@ -60,46 +54,10 @@ def _dev_log(step_name: str, output: Any, cb: ProgressCallback | None = None) ->
 # Public entry points
 # ---------------------------------------------------------------------------
 
-def run_estimation_pipeline(
-    description: str,
-    floorplan_image_url: str | None = None,
-    progress_callback: ProgressCallback | None = None,
-) -> dict:
-    """Entry point — extracts project info, runs clarification check, then full pipeline."""
-    ensure_logging()
-    _emit(progress_callback, "extract_project_info", "started", None)
-    with _log_step("extract_project_info"):
-        project_info = _dev_log("extract_project_info", extract_project_info(description), progress_callback)
-    _emit(progress_callback, "extract_project_info", "completed", None)
-
-    _emit(progress_callback, "check_requirements", "started", None)
-    with _log_step("check_requirements"):
-        requirements_check = _dev_log("check_requirements", check_requirements(description), progress_callback)
-    _emit(progress_callback, "check_requirements", "completed", None)
-
-    missing_fields = requirements_check.get("missing_fields") or []
-    if not missing_fields:
-        with _log_step("find_missing_fields"):
-            missing_fields = _dev_log("find_missing_fields", find_missing_fields(project_info), progress_callback)
-
-    questions = _dev_log("build_clarification_questions", requirements_check.get("questions") or build_clarification_questions(missing_fields), progress_callback)
-
-    if missing_fields:
-        return {
-            "status": "needs_clarification",
-            "question": questions[0],
-        }
-
-    return run_estimation_pipeline_from_project_info(
-        project_info,
-        floorplan_image_url=floorplan_image_url,
-        progress_callback=progress_callback,
-    )
-
 
 def run_estimation_pipeline_from_project_info(
     project_info: dict,
-    floorplan_image_url: str | None = None,
+    floorplan_urls: list[str] | None = None,
     progress_callback: ProgressCallback | None = None,
 ) -> dict:
     """Run the full 11-stage estimation from a resolved project_info dict."""
@@ -110,18 +68,35 @@ def run_estimation_pipeline_from_project_info(
     project_info = apply_defaults(project_info)
 
     # -----------------------------------------------------------------------
-    # Stage 1 & 2: Floorplan download + CV
+    # Stage 1 & 2: Floorplan download + CV (one run per uploaded image, merged)
     # -----------------------------------------------------------------------
     floorplan_geometry: dict | None = None
     floorplan_meta: dict = {"available": False}
+    floorplan_urls = floorplan_urls or []
 
-    if floorplan_image_url:
-        _emit(progress_callback, "floorplan_cv", "started", {"url": floorplan_image_url})
-        try:
-            with _log_step("floorplan_cv"):
-                floorplan_geometry = _dev_log("run_floorplan_pipeline", _run_floorplan_facade(floorplan_image_url), progress_callback)
+    if floorplan_urls:
+        _emit(progress_callback, "floorplan_cv", "started", {"url_count": len(floorplan_urls)})
+        geometries: list[dict] = []
+        for i, url in enumerate(floorplan_urls):
+            try:
+                with _log_step(f"floorplan_cv_{i}"):
+                    geom = _dev_log(
+                        f"run_floorplan_pipeline_{i}",
+                        _run_floorplan_facade(url),
+                        progress_callback,
+                    )
+                geometries.append(geom)
+                _emit(progress_callback, "floorplan_cv", "progress",
+                      {"url_index": i, "url": url, "area_m2": geom.get("total_floor_area_m2")})
+            except Exception as exc:
+                logger.exception("floorplan_cv_failed url=%s", url)
+                _emit(progress_callback, "floorplan_cv", "warning", {"url": url, "error": str(exc)})
+
+        if geometries:
+            floorplan_geometry = _merge_floorplan_geometries(geometries)
             floorplan_meta = {
                 "available": True,
+                "source_count": len(geometries),
                 "method": floorplan_geometry.get("method"),
                 "total_floor_area_m2": floorplan_geometry.get("total_floor_area_m2"),
                 "opening_count": floorplan_geometry.get("opening_count"),
@@ -131,11 +106,9 @@ def run_estimation_pipeline_from_project_info(
                 "heuristic_flags": floorplan_geometry.get("heuristic_flags"),
             }
             _emit(progress_callback, "floorplan_cv", "completed", floorplan_meta)
-        except Exception as exc:
-            logger.exception("floorplan_processing_failed url=%s", floorplan_image_url)
-            _emit(progress_callback, "floorplan_cv", "failed", {"error": str(exc)})
-            floorplan_geometry = None
-            floorplan_meta = {"available": False, "error": str(exc)}
+        else:
+            _emit(progress_callback, "floorplan_cv", "failed", {"error": "All floorplan images failed processing"})
+            floorplan_meta = {"available": False, "error": "All images failed"}
 
     # -----------------------------------------------------------------------
     # Stages 3‑5: BOQ Item Generation (LLM baseline → Item Predictor → LLM gap-fill)
@@ -469,3 +442,69 @@ def _build_source_summary(items: list[dict]) -> dict:
             summary["unknown"] += 1
 
     return summary
+
+
+# ---------------------------------------------------------------------------
+# Multi-image geometry merge
+# ---------------------------------------------------------------------------
+
+_SCALE_PRIORITY = ["ocr_confirmed", "ocr_dimensions", "detector", "heuristic"]
+
+
+def _merge_floorplan_geometries(geometries: list[dict]) -> dict:
+    """Merge geometry dicts from multiple floorplan images into one aggregate.
+
+    Strategy
+    --------
+    - Numeric totals (area, perimeter, walls, openings, rooms): **sum**.
+    - Geometry confidence: **weighted average** by individual confidence scores.
+    - Scale source: pick the **most reliable** value per ``_SCALE_PRIORITY``.
+    - Heuristic flags: **OR** — flag is True if any image raised it.
+    - Rooms list: concatenated.
+    - Method: set to ``"multi_image_merged"``.
+    """
+    if not geometries:
+        return {}
+    if len(geometries) == 1:
+        return geometries[0]
+
+    total_area = sum(g.get("total_floor_area_m2", 0.0) for g in geometries)
+    total_perimeter = sum(g.get("perimeter_m", 0.0) for g in geometries)
+    total_walls = sum(g.get("wall_length_m", 0.0) for g in geometries)
+    total_openings = sum(g.get("opening_count", 0) for g in geometries)
+    total_rooms = sum(g.get("room_count", 0) for g in geometries)
+    all_rooms = [r for g in geometries for r in (g.get("rooms") or [])]
+
+    confs = [float(g.get("geometry_confidence", 0.0)) for g in geometries]
+    avg_conf = sum(confs) / len(confs)
+
+    best_scale = min(
+        (g.get("scale_source", "heuristic") for g in geometries),
+        key=lambda s: _SCALE_PRIORITY.index(s) if s in _SCALE_PRIORITY else 99,
+    )
+
+    _FLAG_KEYS = (
+        "derived_from_area_only",
+        "assumed_floor_height",
+        "inferred_internal_walls",
+        "missing_scale_confirmation",
+    )
+    merged_flags: dict[str, bool] = {
+        key: any(g.get("heuristic_flags", {}).get(key, False) for g in geometries)
+        for key in _FLAG_KEYS
+    }
+
+    return {
+        "total_floor_area_m2": round(total_area, 2),
+        "perimeter_m": round(total_perimeter, 2),
+        "wall_length_m": round(total_walls, 2),
+        "opening_count": total_openings,
+        "room_count": total_rooms,
+        "rooms": all_rooms,
+        "geometry_confidence": round(avg_conf, 4),
+        "scale_source": best_scale,
+        "heuristic_flags": merged_flags,
+        "method": "multi_image_merged",
+        "source_count": len(geometries),
+        "inferred_area_flag": any(g.get("inferred_area_flag", False) for g in geometries),
+    }

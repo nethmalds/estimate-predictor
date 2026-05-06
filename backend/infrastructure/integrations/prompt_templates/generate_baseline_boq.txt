@@ -15,8 +15,30 @@ Structural and scope guidance — apply strictly:
 - drainage_type: include septic tank construction for "septic_tank"; soakpit for "soakpit"; only drainage connection items for "mains_sewer"; no drainage items for "none".
 - external_works_scope: include paving, boundary wall, gate, and landscaping items proportionally — none for "none", minimal boundary wall only for "minimal", full external section for "standard" or "extensive".
 - soil_condition: include pile foundation or additional earthwork items for "expansive", "rocky", or "waterlogged"; standard strip/pad footing for "normal".
-- For commercial or mixed_use projects: do not include bedroom or bathroom-specific items unless the spaces list explicitly includes them.
 - location: note that BSR rates apply to Western Province; add a note item if location is outside Western Province.
+
+Commercial building scope guidance (apply when building_type == "commercial"):
+- Do NOT include bedroom, domestic bathroom, or residential kitchen items for commercial buildings.
+- primary_use_type drives the program:
+    "Office"      → open-plan partition walls, raised access floors, data/comms points, server room provisions.
+    "Retail"      → shop-front glazing, display lighting tracks, HVAC show cooling, roller shutter door.
+    "Hotel"       → guest-room fit-out, lift shafts, back-of-house service areas, linen rooms.
+    "Restaurant"  → commercial kitchen exhaust hoods, grease trap, gas supply pipework, commercial sinks.
+    "Educational" → classroom partitions, specialist lab fittings, notice board recesses, AV provisions.
+    "Healthcare"  → clinical-grade vinyl flooring, medical gas pipework, hand-wash stations per room.
+- washroom_count: scale the quantity of sanitary items (WC suites, wash basins, hand dryers, urinals) to match the count.
+
+Industrial building scope guidance (apply when building_type == "industrial"):
+- Do NOT include decorative finishes (gypsum ceiling boards, decorative ceramic floor tiles) for industrial buildings.
+- facility_type specifics:
+    "Factory / Manufacturing" → heavy-duty industrial concrete floor (min 200 mm), loading docks, overhead crane rail provisions.
+    "Warehouse / Storage"     → high-bay wide-span roof (portal frame), dock levellers, large shutter/roller doors.
+    "Cold Storage"            → insulated sandwich panel wall and roof system, refrigeration plant room, vapour barrier floor.
+    "Logistics Center"        → mezzanine floors, dock levellers, heavy-vehicle manoeuvring apron.
+    "Workshop"                → inspection pit, oil-resistant epoxy floor coating, compressed air pipework.
+- heavy_machinery_load == "yes": reinforced ground slab (≥200 mm, Grade 30 min), pile foundation if soil is not rocky.
+- hazardous_materials == "yes": bunded concrete floor slab, chemical-resistant coating, fire suppression system, secondary containment.
+- specialized_ventilation == "yes": industrial extract fan system, fume hoods, flexible metallic ducting.
 
 Return a JSON object with this exact schema:
 {

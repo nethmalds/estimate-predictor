@@ -13,7 +13,7 @@ class ProcessSession:
     session_id: str
     created_at: float
     description: str
-    floorplan_image_url: str | None
+    floorplan_urls: list[str]
     session_type: str = "clarification"
     project_info: dict | None = None
     missing_fields: list[str] = field(default_factory=list)
@@ -60,7 +60,7 @@ class ProcessSessionStore:
     async def create_session(
         self,
         description: str,
-        floorplan_image_url: str | None,
+        floorplan_urls: list[str] | None = None,
         project_info: dict | None = None,
         missing_fields: list[str] | None = None,
         questions: list[str] | None = None,
@@ -72,7 +72,7 @@ class ProcessSessionStore:
             session_id=session_id,
             created_at=time.time(),
             description=description,
-            floorplan_image_url=floorplan_image_url,
+            floorplan_urls=floorplan_urls or [],
             session_type=session_type,
             project_info=project_info,
             missing_fields=missing_fields or [],

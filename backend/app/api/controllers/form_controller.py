@@ -1,11 +1,11 @@
 import asyncio
 import json
 import time
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from core.logging.logger import get_logger
 from services.clarification_process.clarification_agent import (
@@ -28,18 +28,30 @@ class FloorAreaRow(BaseModel):
 
 
 class WizardFormPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     # Step 1: Project basics
-    building_type: str = Field(..., description="residential | commercial | industrial | mixed_use")
+    building_type: Literal["residential", "commercial", "industrial"] = Field(...)
     floor_count: int = Field(..., ge=1, le=100)
     description: str | None = Field(default=None)
-    floorplan_image_url: str | None = Field(default=None)
+    floorplan_urls: list[str] = Field(default_factory=list)
 
     # Step 2: Floor areas
     floor_areas: list[FloorAreaRow] = Field(..., min_length=1)
 
-    # Step 3: Building program (residential)
+    # Step 3: Building program — residential
     bedrooms: int | None = Field(default=None, ge=1, le=50)
     bathrooms: int | None = Field(default=None, ge=1, le=50)
+
+    # Step 3: Building program — commercial
+    primary_use_type: str | None = Field(default=None)
+    washroom_count: int | None = Field(default=None, ge=1)
+
+    # Step 3: Building program — industrial
+    facility_type: str | None = Field(default=None)
+    heavy_machinery_load: str | None = Field(default=None)
+    hazardous_materials: str | None = Field(default=None)
+    specialized_ventilation: str | None = Field(default=None)
 
     # Step 4: Construction details
     finish_level: str | None = None
@@ -50,17 +62,6 @@ class WizardFormPayload(BaseModel):
     soil_condition: str | None = None
     drainage_type: str | None = None
     external_works_scope: str | None = None
-
-    # Step 5: QS specifications
-    construction_scope: str | None = None
-    site_access_constraint: str | None = None
-    concrete_grade: str | None = None
-    wall_type: str | None = None
-    floor_finish_spec: str | None = None
-    sanitary_fitting_grade: str | None = None
-    electrical_scope_level: str | None = None
-    waterproofing_requirement: str | None = None
-    typical_floor_height: float | None = None
 
 
 class WizardValidateRequest(BaseModel):
@@ -101,14 +102,14 @@ async def submit_form(payload: WizardFormPayload):
     # Create session
     session = await process_store.create_session(
         description=description,
-        floorplan_image_url=payload.floorplan_image_url,
+        floorplan_urls=payload.floorplan_urls,
         project_info=project_info,
         session_type="form",
     )
 
     # Fire pipeline async
     asyncio.create_task(
-        _run_pipeline_and_complete(session, project_info, payload.floorplan_image_url)
+        _run_pipeline_and_complete(session, project_info, payload.floorplan_urls)
     )
 
     logger.info(
@@ -151,13 +152,13 @@ async def stream_form_estimation(session_id: str):
 
 # ─── Internal helpers ─────────────────────────────────────────────────────────
 
-async def _run_pipeline_and_complete(session, project_info: dict, floorplan_image_url: str | None) -> None:
+async def _run_pipeline_and_complete(session, project_info: dict, floorplan_urls: list[str]) -> None:
     try:
         loop = asyncio.get_running_loop()
         result = await asyncio.to_thread(
             run_estimation_pipeline_from_project_info,
             project_info,
-            floorplan_image_url=floorplan_image_url,
+            floorplan_urls=floorplan_urls,
             progress_callback=_build_progress_callback(session, loop),
         )
         _push_trace_sentinel(session)
