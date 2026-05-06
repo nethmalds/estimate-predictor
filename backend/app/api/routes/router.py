@@ -15,6 +15,11 @@ from app.api.controllers.clarification_controller import (
 	submit_clarification_answer,
 	stream_clarification,
 )
+from app.api.controllers.form_controller import (
+	validate_form_payload,
+	submit_form,
+	stream_form_estimation,
+)
 from app.api.controllers.project_controller import extract_floorplan_dimensions
 
 router = APIRouter(prefix="/api")
@@ -27,6 +32,9 @@ router.get("/estimate-project/stream/{session_id}")(stream_estimation)
 router.post("/estimate-project/clarification/start")(start_clarification)
 router.post("/estimate-project/clarification/{session_id}/answer")(submit_clarification_answer)
 router.get("/estimate-project/clarification/stream/{session_id}")(stream_clarification)
+router.post("/estimate-project/form/validate")(validate_form_payload)
+router.post("/estimate-project/form/submit")(submit_form)
+router.get("/estimate-project/form/stream/{session_id}")(stream_form_estimation)
 router.post("/floorplan-ocr")(extract_floorplan_dimensions)
 router.get("/documents/")(get_documents)
 

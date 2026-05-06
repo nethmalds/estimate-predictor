@@ -22,10 +22,10 @@ _SCHEMA_HINT = {
     "spaces": "array of strings",
     "parameters": {
         "built_up_area":        "string with unit or null",
-        "finish_level":         "standard | semi-luxury | luxury or null",
+        "finish_level":         "standard | semi_luxury | luxury or null",
         "structural_system":    "framed | load_bearing | hybrid or null",
-        "roof_type":            "rc flat slab | clay tile | asbestos sheet | unknown or null",
-        "ceiling_type":         "gypsum/mineral fibre | lunumidella timber | asbestos flat | unknown or null",
+        "roof_type":            "rc_flat_slab | clay_tile | asbestos_sheet | metal_sheet | other or null",
+        "ceiling_type":         "gypsum_mineral_fibre | timber | asbestos_flat | concrete | other or null",
         "location":             "string or null",
         "soil_condition":       "normal | expansive | rocky | waterlogged or null",
         "drainage_type":        "mains_sewer | septic_tank | soakpit | none or null",
