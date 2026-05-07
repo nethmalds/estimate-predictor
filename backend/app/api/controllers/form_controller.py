@@ -7,7 +7,6 @@ from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from core.logging.logger import get_logger
 from services.clarification_process.clarification_agent import (
     normalize_wizard_to_project_info,
     validate_wizard_payload,
@@ -16,7 +15,6 @@ from services.clarification_process.clarification_agent import (
 from app.api.state.session import process_store
 from application.pipelines.estimation_pipeline import run_estimation_pipeline_from_project_info
 
-logger = get_logger(__name__)
 
 
 # ─── Pydantic request models ──────────────────────────────────────────────────
@@ -112,12 +110,6 @@ async def submit_form(payload: WizardFormPayload):
         _run_pipeline_and_complete(session, project_info, payload.floorplan_urls)
     )
 
-    logger.info(
-        "form_submit session_id=%s building_type=%s floors=%d",
-        session.session_id,
-        payload.building_type,
-        payload.floor_count,
-    )
 
     return {"session_id": session.session_id, "status": "processing"}
 
@@ -136,16 +128,11 @@ async def stream_form_estimation(session_id: str):
                 except asyncio.TimeoutError:
                     yield ": keepalive\n\n"
                     continue
-                logger.info(
-                    "session_event session_id=%s type=form event=%s",
-                    session.session_id,
-                    event["event"],
-                )
                 yield _format_sse(event["event"], event["data"])
                 if event["event"] in {"completed", "error"}:
                     break
         except GeneratorExit:
-            logger.info("sse_disconnect session_id=%s type=form", session.session_id)
+            pass
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
@@ -163,15 +150,13 @@ async def _run_pipeline_and_complete(session, project_info: dict, floorplan_urls
         )
         _push_trace_sentinel(session)
         await session.queue.put({"event": "completed", "data": result})
-        logger.info("session_end session_id=%s type=form", session.session_id)
     except Exception as exc:  # noqa: BLE001
         await session.queue.put({"event": "error", "data": {"message": str(exc)}})
-        logger.exception("session_error session_id=%s type=form", session.session_id)
 
 
 def _build_progress_callback(session, loop: asyncio.AbstractEventLoop):
     def _progress(step: str, status: str, data: dict | None) -> None:
-        if status == "dev_log":
+        if status == "trace_output":
             record = {
                 "step": step,
                 "status": "completed",
@@ -187,7 +172,6 @@ def _build_progress_callback(session, loop: asyncio.AbstractEventLoop):
                 pass
             return
 
-        logger.info("form_progress step=%s status=%s session_id=%s", step, status, session.session_id)
         event = {
             "event": "progress",
             "data": {"step": step, "status": status, **(data or {})},
@@ -195,7 +179,7 @@ def _build_progress_callback(session, loop: asyncio.AbstractEventLoop):
         try:
             asyncio.run_coroutine_threadsafe(session.queue.put(event), loop)
         except Exception:  # noqa: BLE001
-            logger.warning("progress_callback_failed step=%s session_id=%s", step, session.session_id)
+            pass
 
     return _progress
 

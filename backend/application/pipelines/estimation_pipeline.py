@@ -16,9 +16,7 @@ Stage sequence
 """
 from __future__ import annotations
 
-import time
-from contextlib import contextmanager
-from typing import Callable, Iterator
+from typing import Callable
 
 from services.clarification_process.clarification_agent import apply_defaults
 from services.item_gen_process.service import build_final_boq_items
@@ -30,9 +28,7 @@ from services.reporting_process.report_builder import build_report
 from services.validation.boq_validator import validate_boq_items
 from services.validation.confidence_scoring import score_confidence
 from services.validation.quantity_validator import validate_quantities
-from core.logging.logger import ensure_logging, get_logger, log_payload
 
-logger = get_logger(__name__)
 
 import os
 from typing import Any
@@ -40,13 +36,12 @@ from typing import Any
 ProgressCallback = Callable[[str, str, dict | None], None]
 
 
-def _dev_log(step_name: str, output: Any, cb: ProgressCallback | None = None) -> Any:
-    """Log payload to payloads.log AND push a dev_log event to the pipeline trace."""
-    log_payload(step_name, output)
+def _trace_output(step_name: str, output: Any, cb: ProgressCallback | None = None) -> Any:
+    """Push a trace_output event to the pipeline diagnostic trace."""
     if cb:
-        # status="dev_log" signals the progress callback to write to trace_queue
+        # status="trace_output" signals the progress callback to write to trace_queue
         # without sending it over the main SSE stream to the user.
-        cb(step_name, "dev_log", output if isinstance(output, dict) else {"data": str(output)[:500]})
+        cb(step_name, "trace_output", output if isinstance(output, dict) else {"data": str(output)[:500]})
     return output
 
 
@@ -61,7 +56,6 @@ def run_estimation_pipeline_from_project_info(
     progress_callback: ProgressCallback | None = None,
 ) -> dict:
     """Run the full 11-stage estimation from a resolved project_info dict."""
-    ensure_logging()
 
     # Apply Sri Lankan construction defaults for any non-MVED fields not
     # yet set.  Must run before any service that reads parameters.
@@ -79,17 +73,15 @@ def run_estimation_pipeline_from_project_info(
         geometries: list[dict] = []
         for i, url in enumerate(floorplan_urls):
             try:
-                with _log_step(f"floorplan_cv_{i}"):
-                    geom = _dev_log(
-                        f"run_floorplan_pipeline_{i}",
-                        _run_floorplan_facade(url),
-                        progress_callback,
-                    )
+                geom = _trace_output(
+                    f"run_floorplan_pipeline_{i}",
+                    _run_floorplan_facade(url),
+                    progress_callback,
+                )
                 geometries.append(geom)
                 _emit(progress_callback, "floorplan_cv", "progress",
                       {"url_index": i, "url": url, "area_m2": geom.get("total_floor_area_m2")})
             except Exception as exc:
-                logger.exception("floorplan_cv_failed url=%s", url)
                 _emit(progress_callback, "floorplan_cv", "warning", {"url": url, "error": str(exc)})
 
         if geometries:
@@ -114,8 +106,7 @@ def run_estimation_pipeline_from_project_info(
     # Stages 3‑5: BOQ Item Generation (LLM baseline → Item Predictor → LLM gap-fill)
     # -----------------------------------------------------------------------
     _emit(progress_callback, "baseline_boq", "started", None)
-    with _log_step("boq_generation"):
-        boq_items = _dev_log("build_final_boq_items", build_final_boq_items(project_info, floorplan_geometry, progress_callback=progress_callback), progress_callback)
+    boq_items = _trace_output("build_final_boq_items", build_final_boq_items(project_info, floorplan_geometry, progress_callback=progress_callback), progress_callback)
     _emit(
         progress_callback,
         "baseline_boq",
@@ -127,36 +118,27 @@ def run_estimation_pipeline_from_project_info(
     # Stage 6: RAG — BSR code / unit / rate lookup
     # -----------------------------------------------------------------------
     _emit(progress_callback, "bsr_matching", "started", {"item_count": len(boq_items)})
-    with _log_step("bsr_matching", {"item_count": len(boq_items)}):
-        boq_items = _dev_log("_match_bsr_items", _match_bsr_items(boq_items, progress_callback), progress_callback)
+    boq_items = _trace_output("_match_bsr_items", _match_bsr_items(boq_items, progress_callback), progress_callback)
     _emit(progress_callback, "bsr_matching", "completed", {"item_count": len(boq_items)})
 
     # -----------------------------------------------------------------------
     # Stage 7: Quantity Take-Off Engine (branching)
     # -----------------------------------------------------------------------
     _emit(progress_callback, "quantity_takeoff", "started", {"item_count": len(boq_items)})
-    with _log_step("quantity_takeoff"):
-        boq_items = _dev_log("compute_quantities", compute_quantities(boq_items, project_info, floorplan_geometry), progress_callback)
+    boq_items = _trace_output("compute_quantities", compute_quantities(boq_items, project_info, floorplan_geometry), progress_callback)
     _emit(progress_callback, "quantity_takeoff", "completed", {"item_count": len(boq_items)})
 
     # -----------------------------------------------------------------------
     # Stage 7.5: BOQ Structural Validation (Q2 fix)
     # -----------------------------------------------------------------------
-    with _log_step("boq_validation"):
-        boq_validation = validate_boq_items(boq_items)
-        _dev_log("boq_validation", boq_validation, progress_callback)
-        if not boq_validation["is_valid"]:
-            logger.warning(
-                "boq_validation_errors errors=%s",
-                boq_validation["errors"],
-            )
+    boq_validation = validate_boq_items(boq_items)
+    _trace_output("boq_validation", boq_validation, progress_callback)
 
     # -----------------------------------------------------------------------
     # Stage 8: Validation
     # -----------------------------------------------------------------------
     _emit(progress_callback, "validation", "started", None)
-    with _log_step("validation"):
-        validation_result = _dev_log("validate_quantities", validate_quantities(boq_items), progress_callback)
+    validation_result = _trace_output("validate_quantities", validate_quantities(boq_items), progress_callback)
     warnings = validation_result.get("warnings") or []
     _emit(progress_callback, "validation", "completed", validation_result)
 
@@ -164,8 +146,7 @@ def run_estimation_pipeline_from_project_info(
     # Stage 9: Cost Calculation
     # -----------------------------------------------------------------------
     _emit(progress_callback, "cost_calculation", "started", None)
-    with _log_step("cost_calculation"):
-        costs = _dev_log("calculate_costs", calculate_costs(boq_items), progress_callback)
+    costs = _trace_output("calculate_costs", calculate_costs(boq_items), progress_callback)
     # Sync cost back onto items list (calculate_costs returns enriched items)
     boq_items = costs.pop("items", boq_items)
     _emit(
@@ -182,21 +163,19 @@ def run_estimation_pipeline_from_project_info(
     # Stage 10: Transparency & Confidence Layer
     # -----------------------------------------------------------------------
     _emit(progress_callback, "transparency", "started", None)
-    with _log_step("transparency"):
-        confidence = _dev_log(
+    confidence = _trace_output(
             "score_confidence",
             score_confidence(project_info, floorplan_geometry, warnings, boq_items),
             progress_callback,
         )
-        source_summary = _dev_log("_build_source_summary", _build_source_summary(boq_items), progress_callback)
+    source_summary = _trace_output("_build_source_summary", _build_source_summary(boq_items), progress_callback)
     _emit(progress_callback, "transparency", "completed", {"confidence": confidence, "sources": source_summary})
 
     # -----------------------------------------------------------------------
     # Stage 11: Reporting
     # -----------------------------------------------------------------------
     _emit(progress_callback, "reporting", "started", None)
-    with _log_step("reporting"):
-        report_payload = {
+    report_payload = {
             "status": "completed",
             "project_info": project_info,
             "floorplan": floorplan_meta,
@@ -206,7 +185,7 @@ def run_estimation_pipeline_from_project_info(
             "confidence": confidence,
             "sources": source_summary,
         }
-        report = _dev_log("build_report", build_report(report_payload), progress_callback)
+    report = _trace_output("build_report", build_report(report_payload), progress_callback)
     _emit(progress_callback, "reporting", "completed", None)
 
     return {
@@ -234,21 +213,6 @@ def _emit(
 ) -> None:
     if callback:
         callback(step, status, data)
-
-
-@contextmanager
-def _log_step(step: str, metadata: dict | None = None) -> Iterator[None]:
-    start = time.perf_counter()
-    logger.info("step_start step=%s metadata=%s", step, metadata or {})
-    try:
-        yield
-        logger.info("step_ok step=%s", step)
-    except Exception:
-        logger.exception("step_error step=%s", step)
-        raise
-    finally:
-        ms = (time.perf_counter() - start) * 1000.0
-        logger.info("step_end step=%s duration_ms=%.2f", step, ms)
 
 
 # Keywords that identify contractual/financial items that have no BSR rate.
@@ -321,58 +285,14 @@ def _match_bsr_items(items: list[dict], progress_callback: ProgressCallback | No
 
     # --- Report unmatched items ---
     if unmatched_items:
-        logger.warning("========== [UNMATCHED BSR ITEMS] ==========")
-        logger.warning("Total unmatched items: %d", len(unmatched_items))
         for i, item in enumerate(unmatched_items, 1):
-            logger.warning("%d. [%s] %s", i, item.get("category"), item.get("description"))
-        logger.warning("===========================================")
-        logger.warning("bsr_matching_unmatched_count count=%d", len(unmatched_items))
+            pass
 
-        log_payload(
-            "bsr_matching_unmatched",
-            {
-                "unmatched_count": len(unmatched_items),
-                "unmatched_items": [
-                    {
-                        "category": item.get("category"),
-                        "description": item.get("description"),
-                        "match_type": item.get("match_type"),
-                    }
-                    for item in unmatched_items
-                ],
-            },
-        )
 
     # --- Report soft-matched items (borderline — user should review rates) ---
     if soft_matched_items:
-        logger.warning("========== [SOFT-MATCHED BSR ITEMS] ==========")
-        logger.warning("Total soft-matched items: %d", len(soft_matched_items))
         for i, item in enumerate(soft_matched_items, 1):
-            logger.warning(
-                "%d. [%s] %s  →  BSR:%s (conf=%.3f)",
-                i,
-                item.get("category"),
-                item.get("description"),
-                item.get("bsr_item_no"),
-                item.get("match_confidence") or 0.0,
-            )
-        logger.warning("===============================================")
-
-        log_payload(
-            "bsr_matching_soft",
-            {
-                "soft_match_count": len(soft_matched_items),
-                "soft_match_items": [
-                    {
-                        "category": item.get("category"),
-                        "description": item.get("description"),
-                        "bsr_item_no": item.get("bsr_item_no"),
-                        "confidence": item.get("match_confidence"),
-                    }
-                    for item in soft_matched_items
-                ],
-            },
-        )
+            pass
 
     return matched
 

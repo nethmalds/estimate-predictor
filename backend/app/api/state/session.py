@@ -4,8 +4,6 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
-from core.logging.logger import ensure_logging, get_logger
-logger = get_logger(__name__)
 
 
 @dataclass
@@ -34,7 +32,6 @@ _SESSION_TTL_SECONDS = 3600  # 1 hour
 
 class ProcessSessionStore:
     def __init__(self) -> None:
-        ensure_logging()
         self._sessions: dict[str, ProcessSession] = {}
         self._lock = asyncio.Lock()
         self._cleanup_task: asyncio.Task | None = None
@@ -54,8 +51,6 @@ class ProcessSessionStore:
             expired = [sid for sid, s in self._sessions.items() if s.created_at < cutoff]
             for sid in expired:
                 del self._sessions[sid]
-        for sid in expired:
-            logger.info("session_expired session_id=%s", sid)
 
     async def create_session(
         self,
@@ -66,7 +61,6 @@ class ProcessSessionStore:
         questions: list[str] | None = None,
         session_type: str = "clarification",
     ) -> ProcessSession:
-        ensure_logging()
         session_id = uuid.uuid4().hex
         session = ProcessSession(
             session_id=session_id,
@@ -80,35 +74,16 @@ class ProcessSessionStore:
         )
         async with self._lock:
             self._sessions[session_id] = session
-        logger.info(
-            "session_start session_id=%s type=%s",
-            session.session_id,
-            session.session_type,
-        )
         return session
 
     async def get_session(self, session_id: str) -> ProcessSession | None:
         async with self._lock:
             session = self._sessions.get(session_id)
-        if session:
-            logger.info(
-                "session_access session_id=%s type=%s",
-                session.session_id,
-                session.session_type,
-            )
-        else:
-            logger.info("session_missing session_id=%s", session_id)
         return session
 
     async def delete_session(self, session_id: str) -> None:
         async with self._lock:
-            session = self._sessions.pop(session_id, None)
-        if session:
-            logger.info(
-                "session_end session_id=%s type=%s",
-                session.session_id,
-                session.session_type,
-            )
+            self._sessions.pop(session_id, None)
 
 
 process_store = ProcessSessionStore()

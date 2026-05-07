@@ -20,9 +20,7 @@ from services.item_gen_process.llm_client import (
     generate_baseline_boq,
     gap_fill_boq_items,
 )
-from core.logging.logger import get_logger, log_payload
 
-logger = get_logger(__name__)
 
 
 _CATEGORY_RULES: list[tuple[str, str, str]] = [
@@ -86,16 +84,12 @@ def build_final_boq_items(
     # -----------------------------------------------------------------------
     # Stage 1: Item Predictor → candidate items (runs first to seed Stage 2)
     # -----------------------------------------------------------------------
-    logger.info("boq_stage1_item_predictor start")
     item_predictor_with_conf: list[dict] = []
     try:
         item_predictor_with_conf = predict_boq_items_with_confidence(project_info)
         item_predictor_raw = [entry["description"] for entry in item_predictor_with_conf]
     except Exception:
-        logger.exception("boq_stage1_item_predictor failed — using empty predictions")
         item_predictor_raw = []
-    logger.info("boq_stage1_item_predictor predictions=%d", len(item_predictor_raw))
-    log_payload("item_predictor_raw", item_predictor_raw)
 
     # Build a lookup from description → source_confidence for enrichment later
     _predictor_conf: dict[str, float] = {
@@ -106,41 +100,38 @@ def build_final_boq_items(
     # -----------------------------------------------------------------------
     # Stage 2: LLM Initial QS Pass → baseline BOQ, seeded with predictor hints
     # -----------------------------------------------------------------------
-    logger.info("boq_stage2_baseline_boq start")
     try:
         baseline_items = generate_baseline_boq(project_info, item_predictor_hints=item_predictor_raw)
     except Exception:
-        logger.exception("boq_stage2_baseline_boq failed — using empty baseline")
         baseline_items = []
 
     for item in baseline_items:
         item["source"] = "llm_baseline"
-    logger.info("boq_stage2_baseline_boq items=%d", len(baseline_items))
-    log_payload("llm_baseline_boq", baseline_items)
 
     # -----------------------------------------------------------------------
     # Stage 3: LLM Full Reconciliation — returns the COMPLETE final BOQ list
     # -----------------------------------------------------------------------
-    logger.info("boq_stage3_reconciliation start")
     reconciled_items: list[dict] = []
     try:
         reconciled_items = gap_fill_boq_items(project_info, baseline_items, item_predictor_raw)
     except Exception:
-        logger.exception("boq_stage3_reconciliation failed — falling back to baseline")
         reconciled_items = baseline_items
 
     for item in reconciled_items:
         if not item.get("source"):
             item["source"] = "llm_reconciled"
-    logger.info("boq_stage3_reconciliation items=%d", len(reconciled_items))
-    log_payload("llm_reconciled_items", reconciled_items)
 
     # -----------------------------------------------------------------------
     # Deduplicate as safety fallback (C5)
     # -----------------------------------------------------------------------
     deduped, removed_count = _deduplicate_items(reconciled_items)
     if removed_count:
-        logger.warning("boq_dedup removed=%d (similarity≥%.0f%%)", removed_count, _DEDUP_SIMILARITY_THRESHOLD * 100)
+        if progress_callback:
+            progress_callback(
+                "item_deduplication",
+                "completed",
+                {"removed_duplicates": removed_count, "remaining_items": len(deduped)},
+            )
 
     final_items: list[dict[str, Any]] = []
     for item in deduped:
@@ -154,8 +145,6 @@ def build_final_boq_items(
             "LLM Baseline, Reconciliation) failed or returned empty results."
         )
 
-    logger.info("boq_final items=%d (deduped=%d removed)", len(final_items), removed_count)
-    log_payload("final_boq_items_reconciled", final_items)
     return final_items
 
 
@@ -320,12 +309,6 @@ def _deduplicate_items(
                 _norm_desc(kept.get("description") or ""),
             ).ratio()
             if ratio >= threshold:
-                logger.warning(
-                    "boq_dedup_item desc=%r matches=%r similarity=%.3f",
-                    candidate.get("description"),
-                    kept.get("description"),
-                    ratio,
-                )
                 is_dup = True
                 break
         if not is_dup:

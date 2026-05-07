@@ -20,9 +20,7 @@ from openpyxl.styles import (
 )
 from openpyxl.utils import get_column_letter
 
-from core.logging.logger import get_logger
 
-logger = get_logger(__name__)
 
 # ── Style constants ────────────────────────────────────────────────────────────
 _DARK_FILL   = PatternFill("solid", fgColor="1F3864")
@@ -63,7 +61,6 @@ def generate_excel_report(report_payload: dict) -> bytes:
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
-    logger.info("excel_report_generated sheets=%d", len(wb.sheetnames))
     return buf.getvalue()
 
 

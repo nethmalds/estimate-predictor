@@ -15,11 +15,8 @@ class CategoryRepository:
     def get_all(cls) -> List[Category]:
         """Fetch all active categories, utilizing an in-memory cache."""
         if cls._cached_categories is None:
-            db = SessionLocal()
-            try:
+            with SessionLocal() as db:
                 cls._cached_categories = cls._fetch_all(db)
-            finally:
-                db.close()
         return cls._cached_categories
 
     @classmethod

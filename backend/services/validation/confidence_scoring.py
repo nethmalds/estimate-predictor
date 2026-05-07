@@ -1,6 +1,4 @@
-from core.logging.logger import get_logger
 
-logger = get_logger(__name__)
 
 
 def score_confidence(
@@ -123,7 +121,6 @@ def score_confidence(
                 reasons.append(f"global_allocation_items:{global_alloc_count}/{total}")
 
     score = round(max(0.0, min(score, 1.0)), 4)
-    logger.info("confidence_score score=%.3f reasons=%s", score, reasons)
     return {
         "score": score,
         "reasons": reasons,

@@ -1,7 +1,5 @@
-from core.logging.logger import get_logger
 from core.config.settings import settings
 
-logger = get_logger(__name__)
 
 
 def calculate_costs(
@@ -41,11 +39,6 @@ def calculate_costs(
             cost = rate * quantity
         except (TypeError, ValueError) as exc:
             # C14: one bad item must not crash the entire calculation
-            logger.warning(
-                "cost_item_skip description=%r error=%s",
-                item.get("description", "?"),
-                exc,
-            )
             cost = 0.0
 
         category = item.get("category") or "uncategorized"
@@ -59,15 +52,6 @@ def calculate_costs(
     contingencies = base_total * contingencies_rate
     total = base_total + preliminaries + contingencies
 
-    logger.info(
-        "cost_calculation items=%d base_total=%.2f preliminaries=%.2f "
-        "contingencies=%.2f total=%.2f",
-        len(items),
-        base_total,
-        preliminaries,
-        contingencies,
-        total,
-    )
     return {
         "subtotals": subtotals,
         "base_total": round(base_total, 2),

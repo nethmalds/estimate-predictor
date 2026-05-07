@@ -4,10 +4,8 @@ from pathlib import Path
 from string import Template
 from typing import Any
 
-from core.logging.logger import get_logger
 from infrastructure.integrations.openrouter_client import chat
 
-logger = get_logger(__name__)
 
 
 _SYSTEM_PROMPT = (
@@ -59,7 +57,6 @@ def _render_template(name: str, **kwargs: str) -> str:
 
 
 def extract_project_info(description: str) -> dict:
-    logger.info("llm_call fn=extract_project_info desc_len=%d", len(description))
     prompt = _render_template("extract_project_info.txt", description=description)
     messages = [
         {"role": "system", "content": _SYSTEM_PROMPT},
@@ -68,12 +65,10 @@ def extract_project_info(description: str) -> dict:
     content = chat(messages, stream=False)
     parsed = _safe_json_loads(content)
     result = _normalize_project_info(parsed)
-    logger.info("llm_call fn=extract_project_info building_type=%s floors=%s", result.get("building_type"), result.get("floors"))
     return result
 
 
 def check_requirements(description: str) -> dict:
-    logger.info("llm_call fn=check_requirements")
     prompt = _render_template("check_requirements.txt", description=description)
     messages = [
         {"role": "system", "content": _SYSTEM_PROMPT},
@@ -82,11 +77,6 @@ def check_requirements(description: str) -> dict:
     content = chat(messages, stream=False)
     parsed = _safe_json_loads(content)
     result = _normalize_requirements_check(parsed)
-    logger.info(
-        "llm_call fn=check_requirements satisfied=%s missing_count=%d",
-        result.get("requirements_satisfied"),
-        len(result.get("missing_fields") or []),
-    )
     return result
 
 

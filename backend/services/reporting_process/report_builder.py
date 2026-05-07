@@ -1,6 +1,4 @@
-from core.logging.logger import get_logger
 
-logger = get_logger(__name__)
 
 
 def build_report(payload: dict) -> dict:
@@ -24,15 +22,6 @@ def build_report(payload: dict) -> dict:
         if it.get("needs_rate_review") or it.get("match_type") == "no_match"
     ]
 
-    logger.info(
-        "report_built boq_items=%d total=%.2f confidence=%.3f "
-        "rate_review=%d defaults=%s",
-        len(boq_items),
-        total or 0.0,
-        confidence or 0.0,
-        len(rate_review_items),
-        defaults_applied,
-    )
     return {
         "summary": {
             "total": total,

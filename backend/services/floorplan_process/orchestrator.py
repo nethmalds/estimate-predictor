@@ -53,9 +53,7 @@ from services.floorplan_process.geometry_extraction.ocr import (
     extract_floorplan_text_and_dimensions,
 )
 from services.floorplan_process.image_cache import download_and_cache
-from core.logging.logger import get_logger
 
-logger = get_logger(__name__)
 
 # Assumed floor-to-ceiling height for wall-length estimates (metres)
 _DEFAULT_FLOOR_HEIGHT_M = 3.0
@@ -83,7 +81,6 @@ def _rasterize_pdf(pdf_path: str) -> str:
         pix.save(png_path)
     finally:
         doc.close()
-    logger.info("floorplan_orchestrator pdf_rasterized pdf=%s png=%s", pdf_path, png_path)
     return png_path
 
 
@@ -103,15 +100,12 @@ def run_floorplan_pipeline(image_path: str) -> dict:
     """
     # ── Resolve remote URL to local path ────────────────────────────────────
     if image_path.startswith(("http://", "https://")):
-        logger.info("floorplan_orchestrator resolving remote url=%s", image_path)
         image_path = download_and_cache(image_path)
 
     # ── Rasterize PDF to PNG before OCR/YOLO ────────────────────────────────
     if image_path.lower().endswith(".pdf"):
-        logger.info("floorplan_orchestrator rasterizing pdf path=%s", image_path)
         image_path = _rasterize_pdf(image_path)
 
-    logger.info("floorplan_orchestrator start image_path=%s", image_path)
 
     # ── Raw extraction adapters ──────────────────────────────────────────────
     preprocess = preprocess_image(image_path)
@@ -213,12 +207,6 @@ def run_floorplan_pipeline(image_path: str) -> dict:
         "_ocr":           ocr_result,
     }
 
-    logger.info(
-        "floorplan_orchestrator done method=%s area_m2=%.1f openings=%d "
-        "rooms=%d geo_conf=%.4f scale_source=%s",
-        method, total_floor_area_m2, opening_count,
-        len(room_structs), geometry_confidence, scale_source,
-    )
     return geometry
 
 

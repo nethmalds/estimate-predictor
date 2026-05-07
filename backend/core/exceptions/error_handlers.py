@@ -1,4 +1,3 @@
-import logging
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
@@ -6,7 +5,6 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 
-logger = logging.getLogger(__name__)
 
 
 class AppError(Exception):
@@ -45,7 +43,6 @@ def _error_payload(
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(AppError)
     async def _app_error_handler(request: Request, exc: AppError):
-        logger.warning("AppError on %s: %s", request.url.path, exc.message)
         payload = _error_payload(
             message=exc.message,
             code=exc.error_code,
@@ -57,7 +54,6 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(HTTPException)
     async def _http_error_handler(request: Request, exc: HTTPException):
-        logger.info("HTTPException on %s: %s", request.url.path, exc.detail)
         payload = _error_payload(
             message=str(exc.detail),
             code="HTTP_ERROR",
@@ -69,7 +65,6 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(RequestValidationError)
     async def _validation_error_handler(request: Request, exc: RequestValidationError):
-        logger.warning("Validation error on %s", request.url.path)
         payload = _error_payload(
             message="Validation failed",
             code="VALIDATION_ERROR",
@@ -81,7 +76,6 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(Exception)
     async def _unhandled_error_handler(request: Request, exc: Exception):
-        logger.exception("Unhandled error on %s", request.url.path)
         payload = _error_payload(
             message="Internal server error",
             code="INTERNAL_ERROR",

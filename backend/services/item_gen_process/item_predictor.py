@@ -31,9 +31,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from core.logging.logger import get_logger
 
-logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Model artifact path
@@ -59,14 +57,8 @@ def _load_model() -> None:
             "joblib is required for Item Predictor. Install with: pip install joblib"
         ) from exc
 
-    logger.info("item_predictor_load path=%s", _MODEL_PATH)
     _artifact = joblib.load(str(_MODEL_PATH))
     mlb = _artifact["mlb"]
-    logger.info(
-        "item_predictor_loaded best=%s classes=%d",
-        _artifact.get("best_model_name", "?"),
-        len(mlb.classes_),
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -167,11 +159,6 @@ def predict_boq_items_with_confidence(project_info: dict) -> list[dict]:
         raw_cats, key=lambda c: probs.get(c, 0.0), reverse=True
     )
 
-    logger.info(
-        "item_predictor_predict categories=%d %s",
-        len(predicted_categories),
-        predicted_categories,
-    )
 
     # -----------------------------------------------------------------------
     # Expand categories → item descriptions via cat_to_items (up to 10 each)
@@ -207,7 +194,6 @@ def predict_boq_items_with_confidence(project_info: dict) -> list[dict]:
         key=lambda d: d["source_confidence"],
         reverse=True,
     )
-    logger.info("item_predictor_predict items=%d", len(result))
     return result
 
 

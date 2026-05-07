@@ -114,8 +114,6 @@ def apply_defaults(project_info: dict) -> dict:
     is noted in ``project_info["applied_defaults"]`` so the transparency
     layer can report them and the confidence scorer can penalise them.
     """
-    from core.logging.logger import get_logger  # local import to avoid circular
-    logger = get_logger(__name__)
 
     parameters: dict = project_info.get("parameters") or {}
     applied: list[str] = []
@@ -123,11 +121,6 @@ def apply_defaults(project_info: dict) -> dict:
         if parameters.get(field) is None:
             parameters[field] = default_value
             applied.append(field)
-            logger.warning(
-                "apply_default field=%s value=%r  (no user input — using Sri Lankan norm)",
-                field,
-                default_value,
-            )
     project_info["parameters"] = parameters
     if applied:
         existing = project_info.get("applied_defaults") or []

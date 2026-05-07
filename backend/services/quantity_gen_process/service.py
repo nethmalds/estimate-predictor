@@ -32,9 +32,7 @@ from services.quantity_gen_process.confidence_scoring import (
     candidate_weight,
 )
 from services.quantity_gen_process.quantity_validator import validate_quantity
-from core.logging.logger import get_logger
 
-logger = get_logger(__name__)
 
 # Categories whose quantity is a QS convention (lump sum = 1.0) — skip ML fusion.
 _LUMP_SUM_CATEGORIES: frozenset[str] = frozenset({
@@ -74,10 +72,8 @@ def compute_quantities(
     has_geometry = _geometry_is_usable(floorplan_geometry)
 
     if has_geometry:
-        logger.info("qto_engine branch=floorplan items=%d", len(boq_items))
         return _compute_with_geometry(boq_items, project_info, floorplan_geometry, floors, parameters)
 
-    logger.info("qto_engine branch=no_floorplan items=%d", len(boq_items))
     return _compute_quantity_predictor_all(boq_items, project_info)
 
 
@@ -94,7 +90,6 @@ def _compute_with_geometry(
 ) -> list[dict]:
     # Stage 1: compute geometry confidence (feeds reconciliation weights)
     geo_conf = score_geometry_confidence(geometry)
-    logger.info("qto_engine geo_conf=%.4f", geo_conf)
 
     computed: list[dict] = []
     quantity_predictor_needed: list[dict] = []
@@ -153,11 +148,6 @@ def _compute_with_geometry(
         computed.extend(quantity_predictor_needed)
 
     geo_count = len(boq_items) - len(quantity_predictor_needed)
-    logger.info(
-        "qto_engine geometry_items=%d quantity_predictor_items=%d",
-        geo_count,
-        len(quantity_predictor_needed),
-    )
     return computed
 
 
@@ -286,8 +276,7 @@ def _resolve_quantity_predictor_items(
 
         category_total_qty = group_items[0]["_raw_cat_qty"]
         if category_total_qty <= 0:
-            logger.warning("qto_engine ML returned non-positive qty=%.4f for category=%s",
-                           category_total_qty, category)
+            continue
 
         weights = [_get_qs_weight(category, item.get("description", "")) for item in group_items]
         total_weight = sum(weights)

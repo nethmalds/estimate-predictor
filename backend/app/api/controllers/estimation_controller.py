@@ -25,15 +25,15 @@ from chromadb.api.models.Collection import Collection
 from fastapi import Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from core.logging.logger import get_logger
+from sqlalchemy.orm import Session
+
 from core.config.settings import settings
-from infrastructure.data_layer.database.session import SessionLocal
+from infrastructure.data_layer.database.session import get_db_session
 from infrastructure.data_layer.vector_db.chroma_connection import get_chroma_collection_dependency
 from services.rag_process.service import service
 from services.rag_process.retriever import retrieve_candidates, extract_query_features, clean_boq_query
 from services.rag_process.scorer import score_candidate
 
-logger = get_logger(__name__)
 
 
 # ─── Request models ───────────────────────────────────────────────────────────
@@ -54,7 +54,7 @@ def match_boq(payload: MatchRequest):
     return service.match_boq_item(payload.boq_text)
 
 
-def diagnose_bsr(payload: DiagnoseRequest):
+def diagnose_bsr(payload: DiagnoseRequest, db: Session = Depends(get_db_session)):
     """Diagnostic: return top BSR candidates with raw scores for each BOQ description.
 
     POST /api/rag/diagnose
@@ -63,52 +63,51 @@ def diagnose_bsr(payload: DiagnoseRequest):
     """
     results = []
     try:
-        with SessionLocal() as db:
-            for desc in payload.descriptions:
-                query_features = extract_query_features(desc)
-                cleaned_text = clean_boq_query(query_features.normalized_text)
+        for desc in payload.descriptions:
+            query_features = extract_query_features(desc)
+            cleaned_text = clean_boq_query(query_features.normalized_text)
 
-                query_features_obj, candidates = retrieve_candidates(
-                    boq_text=desc,
-                    session=db,
-                    vector_store=service._get_vector_store(),
-                    embedder=service._get_embedder(),
-                    top_k=payload.top_k,
-                )
+            query_features_obj, candidates = retrieve_candidates(
+                boq_text=desc,
+                session=db,
+                vector_store=service._get_vector_store(),
+                embedder=service._get_embedder(),
+                top_k=payload.top_k,
+            )
 
-                SOFT = 0.30
-                CONFIRM = settings.min_confidence_threshold
-                scored_candidates = []
-                for cand in candidates:
-                    bsr_item = cand["bsr_item"]
-                    scores = score_candidate(query_features_obj, bsr_item, cand["vector_score"])
-                    fs = scores["final_score"]
-                    if fs < SOFT:
-                        mt = "no_match"
-                    elif fs < CONFIRM:
-                        mt = "soft_match"
-                    else:
-                        mt = "confirmed"
-                    scored_candidates.append({
-                        "item_no": bsr_item.item_no,
-                        "bsr_description": bsr_item.description,
-                        "unit": bsr_item.unit,
-                        "rate": bsr_item.rate,
-                        "vector_score": scores["vector_score"],
-                        "keyword_score": scores["keyword_score"],
-                        "final_score": scores["final_score"],
-                        "match_type": mt,
-                        "matched_fields": scores["matched_fields"],
-                    })
-
-                scored_candidates.sort(key=lambda x: x["final_score"], reverse=True)
-                results.append({
-                    "description": desc,
-                    "cleaned_text": cleaned_text,
-                    "detected_work_type": query_features.work_type,
-                    "detected_material": query_features.material,
-                    "top_candidates": scored_candidates,
+            SOFT = 0.30
+            CONFIRM = settings.min_confidence_threshold
+            scored_candidates = []
+            for cand in candidates:
+                bsr_item = cand["bsr_item"]
+                scores = score_candidate(query_features_obj, bsr_item, cand["vector_score"])
+                fs = scores["final_score"]
+                if fs < SOFT:
+                    mt = "no_match"
+                elif fs < CONFIRM:
+                    mt = "soft_match"
+                else:
+                    mt = "confirmed"
+                scored_candidates.append({
+                    "item_no": bsr_item.item_no,
+                    "bsr_description": bsr_item.description,
+                    "unit": bsr_item.unit,
+                    "rate": bsr_item.rate,
+                    "vector_score": scores["vector_score"],
+                    "keyword_score": scores["keyword_score"],
+                    "final_score": scores["final_score"],
+                    "match_type": mt,
+                    "matched_fields": scores["matched_fields"],
                 })
+
+            scored_candidates.sort(key=lambda x: x["final_score"], reverse=True)
+            results.append({
+                "description": desc,
+                "cleaned_text": cleaned_text,
+                "detected_work_type": query_features.work_type,
+                "detected_material": query_features.material,
+                "top_candidates": scored_candidates,
+            })
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 

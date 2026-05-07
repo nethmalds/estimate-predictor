@@ -100,16 +100,6 @@ class DatabaseSettings:
 	retrieval_top_k: int = field(default_factory=lambda: _required_int("RETRIEVAL_TOP_K"))
 	min_confidence_threshold: float = field(default_factory=lambda: _required_float("MIN_CONFIDENCE_THRESHOLD"))
 
-	log_level: str = field(default_factory=lambda: _optional_env("LOG_LEVEL") or "INFO")
-	log_file_app: str = field(
-		default_factory=lambda: _optional_env("LOG_FILE_APP")
-		or _optional_env("LOG_FILE")
-		or "logs/app.log"
-	)
-	log_file_infra: str | None = field(default_factory=lambda: _optional_env("LOG_FILE_INFRA") or "logs/infra.log")
-	log_file_payload: str | None = field(default_factory=lambda: _optional_env("LOG_FILE_PAYLOAD") or "logs/payloads.log")
-	log_file: str = field(init=False, default="")
-
 	openrouter_api_key: str | None = field(default_factory=lambda: _optional_env("OPENROUTER_API_KEY"))
 	openrouter_model: str | None = field(default_factory=lambda: _optional_env("OPENROUTER_MODEL"))
 
@@ -128,9 +118,6 @@ class DatabaseSettings:
 	contingencies_rate: float = field(
 		default_factory=lambda: float(_optional_env("CONTINGENCIES_RATE") or "0.05")
 	)
-
-	def __post_init__(self) -> None:
-		object.__setattr__(self, "log_file", self.log_file_app)
 
 
 settings = DatabaseSettings()

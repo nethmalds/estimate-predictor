@@ -1,6 +1,4 @@
-from core.logging.logger import get_logger
 
-logger = get_logger(__name__)
 
 # Upper-bound sanity limits per category (catches formula bugs producing wild numbers)
 # These are intentionally generous — just a circuit-breaker, not an accuracy check.
@@ -69,16 +67,6 @@ def validate_quantities(items: list[dict]) -> dict:
             rate_review_items.append(desc)
 
     is_valid = len(warnings) == 0
-    logger.info(
-        "quantity_validation items=%d warnings=%d missing_rate=%d rate_review=%d is_valid=%s",
-        len(items),
-        len(warnings),
-        len(missing_rate_items),
-        len(rate_review_items),
-        is_valid,
-    )
-    for w in warnings:
-        logger.warning("quantity_warning: %s", w)
 
     return {
         "warnings": warnings,

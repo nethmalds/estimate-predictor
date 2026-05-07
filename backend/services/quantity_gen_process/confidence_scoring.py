@@ -49,9 +49,7 @@ from __future__ import annotations
 
 import math
 
-from core.logging.logger import get_logger
 
-logger = get_logger(__name__)
 
 # Discrete units — use winner-takes-all reconciliation, not weighted mean
 _DISCRETE_UNITS: frozenset[str] = frozenset({
@@ -279,10 +277,5 @@ def fuse_candidates(
     else:
         delta = 0.0
 
-    logger.debug(
-        "confidence_scoring fused=%.3f conf=%.4f dominant=%s candidates=%d "
-        "discrete=%s delta=%.4f",
-        fused, conf, dominant_source, len(valid), discrete, delta,
-    )
 
     return round(max(fused, 0.0), 2), conf, dominant_source, meta

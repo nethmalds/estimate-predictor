@@ -16,9 +16,7 @@ from fastapi.responses import StreamingResponse
 
 from app.api.state.session import process_store
 from core.config.settings import settings
-from core.logging.logger import get_logger
 
-logger = get_logger(__name__)
 
 # Static registry of all pipeline steps in execution order.
 # Used by the frontend to render step names/descriptions correctly.
@@ -58,7 +56,6 @@ async def stream_pipeline_trace(session_id: str):
     if not session:
         raise HTTPException(status_code=404, detail="Session not found.")
 
-    logger.info("diagnostic_trace_connect session_id=%s", session_id)
 
     async def event_generator():
         # 1. Flush any steps that already completed before we connected
@@ -79,7 +76,7 @@ async def stream_pipeline_trace(session_id: str):
                 if record.get("step") == "__done__":
                     break
         except GeneratorExit:
-            logger.info("diagnostic_trace_disconnect session_id=%s", session_id)
+            pass
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 

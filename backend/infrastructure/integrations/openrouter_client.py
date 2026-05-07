@@ -17,9 +17,7 @@ from typing import Iterable
 from openai import OpenAI
 
 from core.config.settings import settings
-from core.logging.logger import get_logger
 
-logger = get_logger(__name__)
 
 _BASE_URL = "https://openrouter.ai/api/v1"
 _DEFAULT_MODEL = "openai/gpt-oss-120b:free"
@@ -77,12 +75,6 @@ def chat(
     """
     client = _get_client()
     model_name = model or settings.openrouter_model or _DEFAULT_MODEL
-    logger.debug(
-        "openrouter_request model=%s messages=%d stream=%s",
-        model_name,
-        len(messages),
-        stream,
-    )
     try:
         response = client.chat.completions.create(
             model=model_name,
@@ -91,9 +83,6 @@ def chat(
             **(({"stream_options": {"include_usage": True}}) if stream else {}),
         )
         result = _consume_stream(response) if stream else _extract_content(response)
-        logger.debug(
-            "openrouter_response model=%s response_len=%d", model_name, len(result)
-        )
         return result
     except Exception as exc:
         # R1: only fall back to mock for connection / rate-limit issues in dev.
@@ -101,7 +90,6 @@ def chat(
         from openai import APIConnectionError, APIStatusError  # noqa: PLC0415
         is_transient = isinstance(exc, (APIConnectionError, APIStatusError))
         if is_transient and os.getenv("ENV", "development") == "development":
-            logger.warning("openrouter_fallback model=%s error=%s", model_name, exc)
             return _mock_fallback(messages)
         raise
 
@@ -119,13 +107,8 @@ def _consume_stream(stream: Iterable) -> str:
         if usage:
             reasoning_tokens = getattr(usage, "reasoning_tokens", None)
             if reasoning_tokens is not None:
-                logger.debug("openrouter_reasoning_tokens tokens=%d", reasoning_tokens)
-            logger.debug(
-                "openrouter_usage prompt=%s completion=%s total=%s",
-                getattr(usage, "prompt_tokens", "?"),
-                getattr(usage, "completion_tokens", "?"),
-                getattr(usage, "total_tokens", "?"),
-            )
+                # Reasoning token telemetry can be wired here later.
+                pass
 
     return "".join(chunks)
 
