@@ -15,9 +15,13 @@ Removed (chat-only, no longer called):
 from services.clarification_process.clarification_agent import (
     apply_defaults,
     merge_parameters,
+    normalize_wizard_to_project_info,
+    validate_wizard_payload,
 )
 
 __all__ = [
     "apply_defaults",
     "merge_parameters",
+    "normalize_wizard_to_project_info",
+    "validate_wizard_payload",
 ]

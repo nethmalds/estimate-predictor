@@ -7,6 +7,8 @@ internal floorplan modules.  No business logic lives here.
 from __future__ import annotations
 
 from services.floorplan_process.orchestrator import run_floorplan_pipeline
+from services.floorplan_process.confidence_scorer import compute_geometry_confidence
+from services.floorplan_process.geometry_merger import merge_floorplan_geometries
 
 
 def run_pipeline(image_path: str) -> dict:

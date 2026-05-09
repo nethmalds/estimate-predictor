@@ -21,10 +21,6 @@ class ProcessSession:
     awaiting_confirmation: bool = False
     confirmed_project_info: dict | None = None
     queue: asyncio.Queue[dict[str, Any]] = field(default_factory=asyncio.Queue)
-    # Diagnostic monitor: accumulates one record per pipeline step
-    pipeline_trace: list[dict] = field(default_factory=list)
-    # Diagnostic monitor: streams step records live to SSE subscribers
-    trace_queue: asyncio.Queue[dict[str, Any]] = field(default_factory=asyncio.Queue)
 
 
 _SESSION_TTL_SECONDS = 3600  # 1 hour

@@ -18,31 +18,21 @@ from __future__ import annotations
 
 from typing import Callable
 
-from services.clarification_process.clarification_agent import apply_defaults
+from services.clarification_process.service import apply_defaults
 from services.item_gen_process.service import build_final_boq_items
 from services.floorplan_process.service import run_pipeline as _run_floorplan_facade
+from services.floorplan_process.service import merge_floorplan_geometries as _merge_floorplan_geometries
 from services.rag_process.service import service as rag_service
 from services.quantity_gen_process.service import compute_quantities
-from services.pricing_process.cost_calculator import calculate_costs
-from services.reporting_process.report_builder import build_report
-from services.validation.boq_validator import validate_boq_items
-from services.validation.confidence_scoring import score_confidence
-from services.validation.quantity_validator import validate_quantities
+from services.pricing_process.service import calculate_costs
+from services.reporting_process.service import build_report
+from services.reporting_process.service import build_source_summary as _build_source_summary
+from services.validation.service import validate_boq_items, score_confidence, validate_quantities
 
 
 import os
-from typing import Any
 
 ProgressCallback = Callable[[str, str, dict | None], None]
-
-
-def _trace_output(step_name: str, output: Any, cb: ProgressCallback | None = None) -> Any:
-    """Push a trace_output event to the pipeline diagnostic trace."""
-    if cb:
-        # status="trace_output" signals the progress callback to write to trace_queue
-        # without sending it over the main SSE stream to the user.
-        cb(step_name, "trace_output", output if isinstance(output, dict) else {"data": str(output)[:500]})
-    return output
 
 
 # ---------------------------------------------------------------------------
@@ -73,11 +63,7 @@ def run_estimation_pipeline_from_project_info(
         geometries: list[dict] = []
         for i, url in enumerate(floorplan_urls):
             try:
-                geom = _trace_output(
-                    f"run_floorplan_pipeline_{i}",
-                    _run_floorplan_facade(url),
-                    progress_callback,
-                )
+                geom = _run_floorplan_facade(url)
                 geometries.append(geom)
                 _emit(progress_callback, "floorplan_cv", "progress",
                       {"url_index": i, "url": url, "area_m2": geom.get("total_floor_area_m2")})
@@ -106,7 +92,7 @@ def run_estimation_pipeline_from_project_info(
     # Stages 3‑5: BOQ Item Generation (LLM baseline → Item Predictor → LLM gap-fill)
     # -----------------------------------------------------------------------
     _emit(progress_callback, "baseline_boq", "started", None)
-    boq_items = _trace_output("build_final_boq_items", build_final_boq_items(project_info, floorplan_geometry, progress_callback=progress_callback), progress_callback)
+    boq_items = build_final_boq_items(project_info, floorplan_geometry, progress_callback=progress_callback)
     _emit(
         progress_callback,
         "baseline_boq",
@@ -115,30 +101,30 @@ def run_estimation_pipeline_from_project_info(
     )
 
     # -----------------------------------------------------------------------
+    # Stage 5.5: BOQ Structural Validation (IMP-VAL-01 — moved before RAG)
+    # Items lacking description/unit/category are rejected before downstream
+    # -----------------------------------------------------------------------
+    boq_validation = validate_boq_items(boq_items)
+
+    # -----------------------------------------------------------------------
     # Stage 6: RAG — BSR code / unit / rate lookup
     # -----------------------------------------------------------------------
     _emit(progress_callback, "bsr_matching", "started", {"item_count": len(boq_items)})
-    boq_items = _trace_output("_match_bsr_items", _match_bsr_items(boq_items, progress_callback), progress_callback)
+    boq_items = rag_service.match_boq_items_batch(boq_items)
     _emit(progress_callback, "bsr_matching", "completed", {"item_count": len(boq_items)})
 
     # -----------------------------------------------------------------------
     # Stage 7: Quantity Take-Off Engine (branching)
     # -----------------------------------------------------------------------
     _emit(progress_callback, "quantity_takeoff", "started", {"item_count": len(boq_items)})
-    boq_items = _trace_output("compute_quantities", compute_quantities(boq_items, project_info, floorplan_geometry), progress_callback)
+    boq_items = compute_quantities(boq_items, project_info, floorplan_geometry)
     _emit(progress_callback, "quantity_takeoff", "completed", {"item_count": len(boq_items)})
-
-    # -----------------------------------------------------------------------
-    # Stage 7.5: BOQ Structural Validation (Q2 fix)
-    # -----------------------------------------------------------------------
-    boq_validation = validate_boq_items(boq_items)
-    _trace_output("boq_validation", boq_validation, progress_callback)
 
     # -----------------------------------------------------------------------
     # Stage 8: Validation
     # -----------------------------------------------------------------------
     _emit(progress_callback, "validation", "started", None)
-    validation_result = _trace_output("validate_quantities", validate_quantities(boq_items), progress_callback)
+    validation_result = validate_quantities(boq_items)
     warnings = validation_result.get("warnings") or []
     _emit(progress_callback, "validation", "completed", validation_result)
 
@@ -146,7 +132,7 @@ def run_estimation_pipeline_from_project_info(
     # Stage 9: Cost Calculation
     # -----------------------------------------------------------------------
     _emit(progress_callback, "cost_calculation", "started", None)
-    costs = _trace_output("calculate_costs", calculate_costs(boq_items), progress_callback)
+    costs = calculate_costs(boq_items)
     # Sync cost back onto items list (calculate_costs returns enriched items)
     boq_items = costs.pop("items", boq_items)
     _emit(
@@ -163,12 +149,8 @@ def run_estimation_pipeline_from_project_info(
     # Stage 10: Transparency & Confidence Layer
     # -----------------------------------------------------------------------
     _emit(progress_callback, "transparency", "started", None)
-    confidence = _trace_output(
-            "score_confidence",
-            score_confidence(project_info, floorplan_geometry, warnings, boq_items),
-            progress_callback,
-        )
-    source_summary = _trace_output("_build_source_summary", _build_source_summary(boq_items), progress_callback)
+    confidence = score_confidence(project_info, floorplan_geometry, warnings, boq_items)
+    source_summary = _build_source_summary(boq_items)
     _emit(progress_callback, "transparency", "completed", {"confidence": confidence, "sources": source_summary})
 
     # -----------------------------------------------------------------------
@@ -176,7 +158,6 @@ def run_estimation_pipeline_from_project_info(
     # -----------------------------------------------------------------------
     _emit(progress_callback, "reporting", "started", None)
     report_payload = {
-            "status": "completed",
             "project_info": project_info,
             "floorplan": floorplan_meta,
             "boq_items": boq_items,
@@ -185,7 +166,7 @@ def run_estimation_pipeline_from_project_info(
             "confidence": confidence,
             "sources": source_summary,
         }
-    report = _trace_output("build_report", build_report(report_payload), progress_callback)
+    report = build_report(report_payload)
     _emit(progress_callback, "reporting", "completed", None)
 
     return {
@@ -215,216 +196,3 @@ def _emit(
         callback(step, status, data)
 
 
-# Keywords that identify contractual/financial items that have no BSR rate.
-_CONTRACTUAL_KEYWORDS = {
-    "performance security",
-    "advance payment security",
-    "advance payment bond",
-    "advance bond",
-    "lump sum",
-}
-
-
-def _is_contractual_item(item: dict) -> bool:
-    """Return True for financial/contractual items that cannot be BSR-matched."""
-    desc = (item.get("description") or "").lower()
-    cat = (item.get("category") or "").lower()
-    if cat == "preliminary_and_general":
-        return True
-    return any(kw in desc for kw in _CONTRACTUAL_KEYWORDS)
-
-
-def _match_bsr_items(items: list[dict], progress_callback: ProgressCallback | None = None) -> list[dict]:
-    matched: list[dict] = []
-    unmatched_items: list[dict] = []
-    soft_matched_items: list[dict] = []
-
-    for item in items:
-        description = item.get("description") or ""
-
-        # --- Fix 4: bypass RAG for contractual / preliminary items ---
-        if _is_contractual_item(item):
-            merged = dict(item)
-            merged.update(
-                {
-                    "bsr_item_no": "CONTRACTUAL",
-                    "bsr_description": None,
-                    "unit": "item",
-                    "rate": 0.0,
-                    "match_confidence": 0.0,
-                    "match_type": "contractual",
-                    "needs_rate_review": True,
-                }
-            )
-            matched.append(merged)
-            unmatched_items.append(merged)   # still reported for user awareness
-            continue
-
-        bsr_match = rag_service.match_boq_item(description)
-        merged = dict(item)
-        merged.update(
-            {
-                "bsr_item_no": bsr_match.get("item_no"),
-                "bsr_description": bsr_match.get("description"),
-                "unit": bsr_match.get("unit"),
-                "rate": bsr_match.get("rate") or 0.0,
-                "match_confidence": bsr_match.get("confidence"),
-                "match_type": bsr_match.get("match_type", "no_match"),
-                "needs_rate_review": bsr_match.get("needs_rate_review", False),
-            }
-        )
-        matched.append(merged)
-
-        item_no = bsr_match.get("item_no")
-        match_type = bsr_match.get("match_type", "no_match")
-
-        if item_no == "NO_MATCH":
-            unmatched_items.append(merged)
-        elif match_type == "soft_match":
-            soft_matched_items.append(merged)
-
-    # --- Report unmatched items ---
-    if unmatched_items:
-        for i, item in enumerate(unmatched_items, 1):
-            pass
-
-
-    # --- Report soft-matched items (borderline — user should review rates) ---
-    if soft_matched_items:
-        for i, item in enumerate(soft_matched_items, 1):
-            pass
-
-    return matched
-
-
-def _build_source_summary(items: list[dict]) -> dict:
-    """Count items by source type for transparency reporting (Phase 13).
-
-    Categorises each item into one of these buckets:
-    - geometry_only       : single geometry/rule candidate, no ML fusion
-    - parametric_only     : single parametric candidate, no ML fusion
-    - ml_only             : single ML candidate (item-level)
-    - fused               : 2+ candidates were weighted-fused
-    - globally_allocated  : quantity derived from category-level ML global model
-    - low_confidence      : quantity_confidence < 0.50
-    - discretely_rounded  : discrete unit item (whole-number check applied)
-    - unknown             : no other category matched
-    """
-    _DISCRETE_UNITS = frozenset({"nr", "nr.", "no", "no.", "item", "pair", "set", "each", "lot"})
-
-    summary: dict[str, int] = {
-        "geometry_only": 0,
-        "parametric_only": 0,
-        "ml_only": 0,
-        "fused": 0,
-        "globally_allocated": 0,
-        "low_confidence": 0,
-        "discretely_rounded": 0,
-        "unknown": 0,
-    }
-
-    for item in items:
-        candidates = item.get("quantity_candidates") or []
-        recon = item.get("reconciliation_summary") or {}
-        review_flags = recon.get("review_flags") or []
-        candidate_count = recon.get("candidate_count") or len(candidates)
-        source = item.get("quantity_source") or "unknown"
-        unit = str(item.get("unit") or item.get("preferred_unit") or "").lower().strip()
-        conf = float(item.get("quantity_confidence") or item.get("quantity_confidence_score") or 0.0)
-
-        # Discrete rounding bucket (additive — item may also be in another bucket)
-        if unit in _DISCRETE_UNITS:
-            summary["discretely_rounded"] += 1
-
-        # Low confidence (additive)
-        if conf < 0.50:
-            summary["low_confidence"] += 1
-
-        # Global allocation check
-        if "global_allocation_only" in review_flags or "global_allocation_used" in review_flags:
-            summary["globally_allocated"] += 1
-            continue
-
-        # Fused: multiple candidates
-        if candidate_count >= 2:
-            summary["fused"] += 1
-            continue
-
-        # Single-candidate buckets
-        cand_types = [c.get("candidate_type", "") for c in candidates] if candidates else [source]
-        if any(t in ("geometry", "rule_based") for t in cand_types):
-            summary["geometry_only"] += 1
-        elif any(t == "parametric" for t in cand_types):
-            summary["parametric_only"] += 1
-        elif any(t in ("ml_item_level", "quantity_predictor") for t in cand_types):
-            summary["ml_only"] += 1
-        else:
-            summary["unknown"] += 1
-
-    return summary
-
-
-# ---------------------------------------------------------------------------
-# Multi-image geometry merge
-# ---------------------------------------------------------------------------
-
-_SCALE_PRIORITY = ["ocr_confirmed", "ocr_dimensions", "detector", "heuristic"]
-
-
-def _merge_floorplan_geometries(geometries: list[dict]) -> dict:
-    """Merge geometry dicts from multiple floorplan images into one aggregate.
-
-    Strategy
-    --------
-    - Numeric totals (area, perimeter, walls, openings, rooms): **sum**.
-    - Geometry confidence: **weighted average** by individual confidence scores.
-    - Scale source: pick the **most reliable** value per ``_SCALE_PRIORITY``.
-    - Heuristic flags: **OR** — flag is True if any image raised it.
-    - Rooms list: concatenated.
-    - Method: set to ``"multi_image_merged"``.
-    """
-    if not geometries:
-        return {}
-    if len(geometries) == 1:
-        return geometries[0]
-
-    total_area = sum(g.get("total_floor_area_m2", 0.0) for g in geometries)
-    total_perimeter = sum(g.get("perimeter_m", 0.0) for g in geometries)
-    total_walls = sum(g.get("wall_length_m", 0.0) for g in geometries)
-    total_openings = sum(g.get("opening_count", 0) for g in geometries)
-    total_rooms = sum(g.get("room_count", 0) for g in geometries)
-    all_rooms = [r for g in geometries for r in (g.get("rooms") or [])]
-
-    confs = [float(g.get("geometry_confidence", 0.0)) for g in geometries]
-    avg_conf = sum(confs) / len(confs)
-
-    best_scale = min(
-        (g.get("scale_source", "heuristic") for g in geometries),
-        key=lambda s: _SCALE_PRIORITY.index(s) if s in _SCALE_PRIORITY else 99,
-    )
-
-    _FLAG_KEYS = (
-        "derived_from_area_only",
-        "assumed_floor_height",
-        "inferred_internal_walls",
-        "missing_scale_confirmation",
-    )
-    merged_flags: dict[str, bool] = {
-        key: any(g.get("heuristic_flags", {}).get(key, False) for g in geometries)
-        for key in _FLAG_KEYS
-    }
-
-    return {
-        "total_floor_area_m2": round(total_area, 2),
-        "perimeter_m": round(total_perimeter, 2),
-        "wall_length_m": round(total_walls, 2),
-        "opening_count": total_openings,
-        "room_count": total_rooms,
-        "rooms": all_rooms,
-        "geometry_confidence": round(avg_conf, 4),
-        "scale_source": best_scale,
-        "heuristic_flags": merged_flags,
-        "method": "multi_image_merged",
-        "source_count": len(geometries),
-        "inferred_area_flag": any(g.get("inferred_area_flag", False) for g in geometries),
-    }

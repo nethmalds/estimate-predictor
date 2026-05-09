@@ -19,3 +19,7 @@ ultralytics>=8.0.0
 torch>=2.0.0
 numpy<2.0.0
 openpyxl>=3.1.0
+bcrypt>=4.0.0
+python-multipart>=0.0.9
+email-validator>=2.0.0
+PyJWT>=2.8.0

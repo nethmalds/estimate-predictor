@@ -80,6 +80,7 @@ def chat(
             model=model_name,
             messages=messages,  # type: ignore[arg-type]
             stream=stream,
+            timeout=120,  # 2 minute hard timeout — prevents indefinite blocking
             **(({"stream_options": {"include_usage": True}}) if stream else {}),
         )
         result = _consume_stream(response) if stream else _extract_content(response)

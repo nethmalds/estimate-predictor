@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter, Geist } from "next/font/google";
 import "./globals.css";
 import { cn } from "@/lib/utils";
+import Providers from "@/components/Providers";
 
 const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
@@ -24,7 +25,7 @@ export default function RootLayout({
   return (
     <html lang="en" className={cn("h-full", inter.className, "font-sans", geist.variable)}>
       <body className="h-full bg-foreground">
-        {children}
+        <Providers>{children}</Providers>
       </body>
     </html>
   );

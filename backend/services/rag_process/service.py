@@ -2,11 +2,12 @@ import threading
 from pathlib import Path
 
 
-from services.rag_process.db import upsert_bsr_items
+from services.rag_process.db import upsert_bsr_items, init_db
 from services.rag_process.embeddings import EmbeddingProvider
 from services.rag_process.pdf_parser import parse_bsr_pdf
-from services.rag_process.retriever import retrieve_candidates
+from services.rag_process.retriever import retrieve_candidates, extract_query_features, clean_boq_query
 from services.rag_process.scorer import score_candidate
+from services.rag_process.matcher import match_boq_items_batch as _match_boq_items_batch
 from core.config.settings import settings
 from infrastructure.data_layer.vector_db.vector_store import ChromaBSRVectorStore
 from infrastructure.data_layer.database.session import SessionLocal
@@ -122,6 +123,10 @@ class BOQMatcherService:
                     "matched_fields": best_scores["matched_fields"],
                 },
             }
+
+    def match_boq_items_batch(self, items: list[dict]) -> list[dict]:
+        """Batch-match a list of BOQ items against BSR, skipping contractual ones."""
+        return _match_boq_items_batch(items, self.match_boq_item)
 
 
 service = BOQMatcherService()

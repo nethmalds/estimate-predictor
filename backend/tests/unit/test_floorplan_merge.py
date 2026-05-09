@@ -6,7 +6,7 @@ _BACKEND_ROOT = Path(__file__).resolve().parents[2]
 if str(_BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(_BACKEND_ROOT))
 
-from application.pipelines.estimation_pipeline import _merge_floorplan_geometries  # noqa: E402
+from services.floorplan_process.service import merge_floorplan_geometries as _merge_floorplan_geometries  # noqa: E402
 
 
 def _geom(area=100.0, perimeter=40.0, walls=55.0, openings=4, rooms=3,

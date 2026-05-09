@@ -48,6 +48,14 @@ Rules:
 - Do NOT return "added_items" — the key must be "items".
 - Use strict Sri Lanka BSR 2025 (Western Province) style descriptions.
 - Include all standard preliminary items.
+- MANDATORY COVERAGE CHECK: Before returning, verify the following sections are present with at least the minimum count. If any section is below minimum, add items to bring it up:
+  * preliminary_and_general: ≥5, excavation_and_earthwork: ≥4, piling_and_substructure: ≥5
+  * concrete_works: ≥8 (per floor, per element), formwork: ≥5, reinforcement: ≥4
+  * brick_masonry: ≥4, plastering_and_rendering: ≥4, painting_and_finishes: ≥4
+  * roofing_and_ceiling: ≥5, doors_windows_and_glazing: ≥6, flooring_and_tiling: ≥4
+  * sanitary_and_plumbing: ≥8, electrical_and_mechanical: ≥8, testing_and_commissioning: ≥2
+- Generate per-floor variants for concrete works, masonry, plastering, painting, flooring when floors > 1.
+- MINIMUM TOTAL: For 1-storey ≥60; 2-storey ≥100; 3+ storey ≥120 items in final list.
 - Do NOT include items that contradict the project parameters.
 - Return JSON only. No markdown, no explanation.
 

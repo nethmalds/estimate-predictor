@@ -1,9 +1,9 @@
 """Unit tests for build_final_boq_items in boq_builder.py.
 
 Verifies:
-- Stage order: LLM baseline → Item Predictor additions → LLM reconciliation
-- Provenance tags: llm_baseline, item_predictor_addition, llm_reconciled
-- _predictor_conf lookup is built from predictor additions (not all predictions)
+- Stage order: Item Predictor → LLM baseline (seeded with hints) → LLM gap-fill
+- Provenance tags: llm_baseline, llm_reconciled
+- baseline receives predictor descriptions as hints
 - Graceful degradation when any stage fails
 """
 import sys
@@ -62,19 +62,19 @@ def _make_raw_items(descriptions, category="concrete_works"):
 # ---------------------------------------------------------------------------
 
 class TestBuildFinalBoqItemsStageOrder:
-    """Verify the new stage order: LLM baseline → predictor additions → LLM reconciliation."""
+    """Verify stage order: Item Predictor → LLM baseline (seeded with hints) → LLM gap-fill."""
 
-    def test_baseline_called_before_predictor(self):
-        """generate_baseline_boq must be called before predict_additional_boq_items."""
+    def test_predictor_called_before_baseline(self):
+        """predict_boq_items_with_confidence must be called before generate_baseline_boq."""
         call_order: list[str] = []
 
-        def fake_baseline(pi):
+        def fake_predictor(pi):
+            call_order.append("predictor")
+            return [{"description": "Concrete in foundations", "source_confidence": 0.8}]
+
+        def fake_baseline(pi, item_predictor_hints=None):
             call_order.append("baseline")
             return _make_raw_items(["Concrete in foundations"])
-
-        def fake_predictor(pi, baseline):
-            call_order.append("predictor")
-            return []
 
         def fake_reconcile(pi, baseline, predictor):
             call_order.append("reconcile")
@@ -83,67 +83,50 @@ class TestBuildFinalBoqItemsStageOrder:
         from services.item_gen_process.boq_builder import build_final_boq_items
 
         with (
+            patch("services.item_gen_process.boq_builder.predict_boq_items_with_confidence", side_effect=fake_predictor),
             patch("services.item_gen_process.boq_builder.generate_baseline_boq", side_effect=fake_baseline),
-            patch("services.item_gen_process.boq_builder.predict_additional_boq_items", side_effect=fake_predictor),
             patch("services.item_gen_process.boq_builder.gap_fill_boq_items", side_effect=fake_reconcile),
         ):
             build_final_boq_items(_make_project_info())
 
-        assert call_order == ["baseline", "predictor", "reconcile"], (
-            f"Expected baseline → predictor → reconcile, got {call_order}"
+        assert call_order == ["predictor", "baseline", "reconcile"], (
+            f"Expected predictor → baseline → reconcile, got {call_order}"
         )
 
-    def test_predictor_receives_baseline_items(self):
-        """predict_additional_boq_items must receive the baseline items list."""
-        baseline_items = _make_raw_items(["Foundation concrete"])
-        captured_baseline = {}
+    def test_baseline_receives_predictor_hints(self):
+        """generate_baseline_boq must receive predictor descriptions as item_predictor_hints."""
+        captured_hints: dict = {}
 
-        def fake_baseline(pi):
-            return baseline_items
-
-        def fake_predictor(pi, baseline):
-            captured_baseline["value"] = baseline
-            return []
-
-        def fake_reconcile(pi, baseline, predictor):
-            return baseline_items
+        def fake_baseline(pi, item_predictor_hints=None):
+            captured_hints["value"] = item_predictor_hints
+            return _make_raw_items(["Foundation concrete"])
 
         with (
+            patch("services.item_gen_process.boq_builder.predict_boq_items_with_confidence",
+                  return_value=[{"description": "Foundation concrete", "source_confidence": 0.8}]),
             patch("services.item_gen_process.boq_builder.generate_baseline_boq", side_effect=fake_baseline),
-            patch("services.item_gen_process.boq_builder.predict_additional_boq_items", side_effect=fake_predictor),
-            patch("services.item_gen_process.boq_builder.gap_fill_boq_items", side_effect=fake_reconcile),
+            patch("services.item_gen_process.boq_builder.gap_fill_boq_items",
+                  return_value=_make_raw_items(["Foundation concrete"])),
         ):
             from services.item_gen_process.boq_builder import build_final_boq_items
             build_final_boq_items(_make_project_info())
 
-        # Should be the same list passed through
-        assert captured_baseline.get("value") is not None
-        assert any(
-            item["description"] == "Foundation concrete"
-            for item in captured_baseline["value"]
-        )
+        assert captured_hints.get("value") is not None
+        assert "Foundation concrete" in captured_hints["value"]
 
     def test_reconcile_receives_predictor_descriptions_only(self):
-        """gap_fill_boq_items must receive only the description strings from predictor additions."""
-        additions = [
-            {
-                "description": "Staircase balustrade",
-                "source_confidence": 0.72,
-                "predicted_category": "formwork",
-                "source": "item_predictor_addition",
-            }
-        ]
-        captured_predictor_arg = {}
+        """gap_fill_boq_items must receive only the description strings from predictor output."""
+        captured_predictor_arg: dict = {}
 
         def fake_reconcile(pi, baseline, predictor):
             captured_predictor_arg["value"] = predictor
             return _make_raw_items(["Foundation concrete", "Staircase balustrade"])
 
         with (
+            patch("services.item_gen_process.boq_builder.predict_boq_items_with_confidence",
+                  return_value=[{"description": "Staircase balustrade", "source_confidence": 0.72}]),
             patch("services.item_gen_process.boq_builder.generate_baseline_boq",
                   return_value=_make_raw_items(["Foundation concrete"])),
-            patch("services.item_gen_process.boq_builder.predict_additional_boq_items",
-                  return_value=additions),
             patch("services.item_gen_process.boq_builder.gap_fill_boq_items", side_effect=fake_reconcile),
         ):
             from services.item_gen_process.boq_builder import build_final_boq_items
@@ -160,13 +143,8 @@ class TestProvenanceTags:
 
     def _run(self, reconciled_descriptions, predictor_addition_descriptions=None):
         """Helper: mock all three stages and return the enriched final items."""
-        predictor_additions = [
-            {
-                "description": d,
-                "source_confidence": 0.70,
-                "predicted_category": "concrete_works",
-                "source": "item_predictor_addition",
-            }
+        predictor_items = [
+            {"description": d, "source_confidence": 0.70}
             for d in (predictor_addition_descriptions or [])
         ]
         reconciled = [
@@ -175,10 +153,10 @@ class TestProvenanceTags:
         ]
 
         with (
+            patch("services.item_gen_process.boq_builder.predict_boq_items_with_confidence",
+                  return_value=predictor_items),
             patch("services.item_gen_process.boq_builder.generate_baseline_boq",
                   return_value=_make_raw_items(["Foundation concrete"])),
-            patch("services.item_gen_process.boq_builder.predict_additional_boq_items",
-                  return_value=predictor_additions),
             patch("services.item_gen_process.boq_builder.gap_fill_boq_items",
                   return_value=reconciled),
         ):
@@ -204,15 +182,15 @@ class TestProvenanceTags:
 
 class TestGracefulDegradation:
     def test_predictor_failure_falls_through_to_reconciliation(self):
-        """If predict_additional_boq_items raises, pipeline should continue with no additions."""
-        def boom(pi, baseline):
+        """If predict_boq_items_with_confidence raises, pipeline continues with empty hints."""
+        def boom(pi):
             raise RuntimeError("predictor exploded")
 
         with (
+            patch("services.item_gen_process.boq_builder.predict_boq_items_with_confidence",
+                  side_effect=boom),
             patch("services.item_gen_process.boq_builder.generate_baseline_boq",
                   return_value=_make_raw_items(["Foundation concrete"])),
-            patch("services.item_gen_process.boq_builder.predict_additional_boq_items",
-                  side_effect=boom),
             patch("services.item_gen_process.boq_builder.gap_fill_boq_items",
                   return_value=_make_raw_items(["Foundation concrete"])),
         ):
@@ -227,10 +205,10 @@ class TestGracefulDegradation:
             raise RuntimeError("reconciliation exploded")
 
         with (
+            patch("services.item_gen_process.boq_builder.predict_boq_items_with_confidence",
+                  return_value=[]),
             patch("services.item_gen_process.boq_builder.generate_baseline_boq",
                   return_value=_make_raw_items(["Foundation concrete"])),
-            patch("services.item_gen_process.boq_builder.predict_additional_boq_items",
-                  return_value=[]),
             patch("services.item_gen_process.boq_builder.gap_fill_boq_items",
                   side_effect=boom),
         ):

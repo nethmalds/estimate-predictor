@@ -1,19 +1,26 @@
 import asyncio
 import json
-import time
 from typing import Any, Literal
 
-from fastapi import HTTPException
+# Holds strong references to background pipeline tasks so the GC cannot
+# collect them before they finish.  Each task removes itself on completion.
+_background_tasks: set[asyncio.Task] = set()
+
+from fastapi import Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy.orm import Session
 
-from services.clarification_process.clarification_agent import (
+from services.clarification_process.service import (
     normalize_wizard_to_project_info,
     validate_wizard_payload,
     apply_defaults,
 )
 from app.api.state.session import process_store
+from app.api.middleware.auth_dependency import get_current_user_id
 from application.pipelines.estimation_pipeline import run_estimation_pipeline_from_project_info
+from infrastructure.data_layer.database.session import get_db_session
+from infrastructure.data_layer.database.models.estimate import Estimate
 
 
 
@@ -77,7 +84,11 @@ async def validate_form_payload(request: WizardValidateRequest):
     return {"valid": True, "errors": {}}
 
 
-async def submit_form(payload: WizardFormPayload):
+async def submit_form(
+    payload: WizardFormPayload,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db_session),
+):
     """Submit completed wizard form, create session, start estimation pipeline."""
     raw = payload.model_dump()
 
@@ -97,6 +108,24 @@ async def submit_form(payload: WizardFormPayload):
 
     description = payload.description or f"{payload.building_type} building, {payload.floor_count} floor(s)"
 
+    # Create a persisted Estimate record immediately so dashboard/detail can reference it
+    import uuid as _uuid
+    try:
+        uid = _uuid.UUID(user_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid user token.")
+
+    estimate_record = Estimate(
+        user_id=uid,
+        project_name=description,
+        status="in_progress",
+        project_info=project_info,
+    )
+    db.add(estimate_record)
+    db.commit()
+    db.refresh(estimate_record)
+    estimate_id = str(estimate_record.id)
+
     # Create session
     session = await process_store.create_session(
         description=description,
@@ -105,13 +134,15 @@ async def submit_form(payload: WizardFormPayload):
         session_type="form",
     )
 
-    # Fire pipeline async
-    asyncio.create_task(
-        _run_pipeline_and_complete(session, project_info, payload.floorplan_urls)
+    # Fire pipeline async — keep a strong reference so GC cannot collect the
+    # task before it completes.
+    task = asyncio.create_task(
+        _run_pipeline_and_complete(session, project_info, payload.floorplan_urls, estimate_id)
     )
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
 
-
-    return {"session_id": session.session_id, "status": "processing"}
+    return {"session_id": session.session_id, "status": "processing", "estimate_id": estimate_id}
 
 
 async def stream_form_estimation(session_id: str):
@@ -139,7 +170,9 @@ async def stream_form_estimation(session_id: str):
 
 # ─── Internal helpers ─────────────────────────────────────────────────────────
 
-async def _run_pipeline_and_complete(session, project_info: dict, floorplan_urls: list[str]) -> None:
+async def _run_pipeline_and_complete(
+    session, project_info: dict, floorplan_urls: list[str], estimate_id: str
+) -> None:
     try:
         loop = asyncio.get_running_loop()
         result = await asyncio.to_thread(
@@ -148,30 +181,20 @@ async def _run_pipeline_and_complete(session, project_info: dict, floorplan_urls
             floorplan_urls=floorplan_urls,
             progress_callback=_build_progress_callback(session, loop),
         )
-        _push_trace_sentinel(session)
-        await session.queue.put({"event": "completed", "data": result})
+        # Persist the result to the database
+        await asyncio.to_thread(_persist_estimate_result, estimate_id, result)
+        # Include estimate_id in the completed event so the frontend can navigate to it
+        completed_data = dict(result) if isinstance(result, dict) else result
+        if isinstance(completed_data, dict):
+            completed_data["estimate_id"] = estimate_id
+        await session.queue.put({"event": "completed", "data": completed_data})
     except Exception as exc:  # noqa: BLE001
+        await asyncio.to_thread(_mark_estimate_failed, estimate_id)
         await session.queue.put({"event": "error", "data": {"message": str(exc)}})
 
 
 def _build_progress_callback(session, loop: asyncio.AbstractEventLoop):
     def _progress(step: str, status: str, data: dict | None) -> None:
-        if status == "trace_output":
-            record = {
-                "step": step,
-                "status": "completed",
-                "started_at": time.time(),
-                "completed_at": time.time(),
-                "duration_ms": 0.0,
-                "output": data or {},
-            }
-            session.pipeline_trace.append(record)
-            try:
-                asyncio.run_coroutine_threadsafe(session.trace_queue.put(record), loop)
-            except Exception:  # noqa: BLE001
-                pass
-            return
-
         event = {
             "event": "progress",
             "data": {"step": step, "status": status, **(data or {})},
@@ -184,17 +207,56 @@ def _build_progress_callback(session, loop: asyncio.AbstractEventLoop):
     return _progress
 
 
-def _push_trace_sentinel(session) -> None:
-    sentinel = {"step": "__done__", "status": "done", "output": {}}
-    session.pipeline_trace.append(sentinel)
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            asyncio.run_coroutine_threadsafe(session.trace_queue.put(sentinel), loop)
-    except Exception:  # noqa: BLE001
-        pass
-
-
 def _format_sse(event: str, data: dict[str, Any]) -> str:
     payload = json.dumps(data, ensure_ascii=True)
     return f"event: {event}\ndata: {payload}\n\n"
+
+
+def _persist_estimate_result(estimate_id: str, result: dict) -> None:
+    """Update the Estimate record with the pipeline result (called in a thread)."""
+    import uuid as _uuid
+    from infrastructure.data_layer.database.session import SessionLocal
+
+    costs = result.get("costs") or {}
+    confidence_data = result.get("confidence") or {}
+    boq_items = result.get("boq_items") or []
+
+    try:
+        db = SessionLocal()
+        try:
+            est = db.query(Estimate).filter(
+                Estimate.id == _uuid.UUID(estimate_id)
+            ).first()
+            if est:
+                est.status = "completed"
+                est.result = result
+                est.confidence = confidence_data.get("score")
+                est.grand_total = costs.get("total")
+                est.item_count = len(boq_items) if isinstance(boq_items, list) else None
+                db.commit()
+        finally:
+            db.close()
+    except Exception as exc:  # noqa: BLE001
+        import logging
+        logging.getLogger(__name__).error("Failed to persist estimate result: %s", exc)
+
+
+def _mark_estimate_failed(estimate_id: str) -> None:
+    """Mark the Estimate record as failed (called in a thread)."""
+    import uuid as _uuid
+    from infrastructure.data_layer.database.session import SessionLocal
+
+    try:
+        db = SessionLocal()
+        try:
+            est = db.query(Estimate).filter(
+                Estimate.id == _uuid.UUID(estimate_id)
+            ).first()
+            if est:
+                est.status = "failed"
+                db.commit()
+        finally:
+            db.close()
+    except Exception as exc:  # noqa: BLE001
+        import logging
+        logging.getLogger(__name__).error("Failed to mark estimate failed: %s", exc)

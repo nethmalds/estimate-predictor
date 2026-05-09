@@ -287,10 +287,14 @@ def _deduplicate_items(
     items: list[dict[str, Any]],
     threshold: float = _DEDUP_SIMILARITY_THRESHOLD,
 ) -> tuple[list[dict[str, Any]], int]:
-    """Remove near-duplicate BOQ items using fuzzy string matching (C5).
+    """Remove near-duplicate BOQ items using fuzzy string matching (IMP-BOQ-04).
 
     Two items are considered duplicates when the similarity ratio of their
     normalised descriptions is ≥ *threshold* (default 0.90 = 90%).
+    Items are NOT considered duplicates when their descriptions differ in
+    floor-level tokens (ground, first, second, etc.), concrete grade, or
+    location — preserving legitimate per-floor / per-grade variants.
+
     The first occurrence is kept; subsequent duplicates are dropped.
 
     Returns
@@ -309,6 +313,12 @@ def _deduplicate_items(
                 _norm_desc(kept.get("description") or ""),
             ).ratio()
             if ratio >= threshold:
+                # IMP-BOQ-04: don't merge if floor/grade/location differs
+                if _descriptions_differ_in_floor_or_grade(
+                    candidate.get("description") or "",
+                    kept.get("description") or "",
+                ):
+                    continue
                 is_dup = True
                 break
         if not is_dup:
@@ -316,6 +326,28 @@ def _deduplicate_items(
         else:
             removed += 1
     return unique, removed
+
+
+# Floor-level tokens that distinguish per-floor items (IMP-BOQ-04)
+_FLOOR_TOKENS = re.compile(
+    r"\b(ground|first|second|third|fourth|fifth|basement|roof|upper|lower|gf|ff|sf)\b",
+    re.IGNORECASE,
+)
+# Concrete grade tokens
+_GRADE_TOKENS = re.compile(r"\bgrade\s*\d+\b|\bc\d{2}\b", re.IGNORECASE)
+
+
+def _descriptions_differ_in_floor_or_grade(a: str, b: str) -> bool:
+    """Return True if descriptions differ in floor level, concrete grade, or location."""
+    floors_a = set(_FLOOR_TOKENS.findall(a.lower()))
+    floors_b = set(_FLOOR_TOKENS.findall(b.lower()))
+    if floors_a != floors_b:
+        return True
+    grades_a = set(_GRADE_TOKENS.findall(a.lower()))
+    grades_b = set(_GRADE_TOKENS.findall(b.lower()))
+    if grades_a != grades_b:
+        return True
+    return False
 
 
 def _norm_desc(text: str) -> str:
