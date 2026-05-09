@@ -17,9 +17,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     pass
 
-from core.logging.logger import get_logger
 
-logger = get_logger(__name__)
 
 _MODEL_PATH = (
     Path(__file__).resolve().parents[3]
@@ -67,10 +65,8 @@ class YOLOFloorplanDetector:
             from ultralytics import YOLO
 
             device = 0 if torch.cuda.is_available() else "cpu"
-            logger.info("yolo_detector loading model path=%s device=%s", _MODEL_PATH, device)
             self._model = YOLO(str(_MODEL_PATH))
             self._device = device
-            logger.info("yolo_detector model loaded classes=%s", self._model.names)
         except ImportError as exc:
             raise ImportError(
                 "ultralytics and torch are required. "
@@ -102,7 +98,6 @@ class YOLOFloorplanDetector:
         )
 
         if not results:
-            logger.warning("yolo_detector no results for image_path=%s", image_path)
             return _empty_result()
 
         result = results[0]
@@ -115,7 +110,6 @@ class YOLOFloorplanDetector:
 
         boxes = result.boxes
         if boxes is None or len(boxes) == 0:
-            logger.info("yolo_detector no detections image_path=%s", image_path)
             return _empty_result(img_w=img_w, img_h=img_h)
 
         for box in boxes:
@@ -150,10 +144,6 @@ class YOLOFloorplanDetector:
         all_confs = [d["conf"] for d in raw]
         avg_conf = round(sum(all_confs) / len(all_confs), 4) if all_confs else 0.0
 
-        logger.info(
-            "yolo_detector done zones=%d doors=%d windows=%d raw=%d avg_conf=%.3f img=%dx%d",
-            len(rooms), doors, windows, len(raw), avg_conf, img_w, img_h,
-        )
 
         return {
             "rooms": rooms,

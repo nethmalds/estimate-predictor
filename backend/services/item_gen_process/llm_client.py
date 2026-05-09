@@ -13,10 +13,8 @@ from pathlib import Path
 from string import Template
 from typing import Any
 
-from core.logging.logger import get_logger
 from infrastructure.integrations.openrouter_client import chat
 
-logger = get_logger(__name__)
 
 _SYSTEM_PROMPT = (
     "You are a Quantity Surveyor specialising in Sri Lankan construction. "
@@ -58,11 +56,6 @@ def generate_baseline_boq(
     Item Predictor expects before writing its own baseline list.
     """
     hints = item_predictor_hints or []
-    logger.info(
-        "llm_call fn=generate_baseline_boq building_type=%s predictor_hints=%d",
-        project_info.get("building_type"),
-        len(hints),
-    )
     prompt = _render_template(
         "generate_baseline_boq.txt",
         project_info_json=json.dumps(project_info, ensure_ascii=True),
@@ -76,10 +69,8 @@ def generate_baseline_boq(
     parsed = _safe_json_loads(content)
     items = parsed.get("items") if isinstance(parsed, dict) else None
     if not isinstance(items, list):
-        logger.warning("llm_call fn=generate_baseline_boq returned no items list")
         return []
     result = _normalize_boq_item_list(items)
-    logger.info("llm_call fn=generate_baseline_boq items=%d", len(result))
     return result
 
 
@@ -95,11 +86,6 @@ def gap_fill_boq_items(
     irrelevant or conflicting ones, deduplicating semantically, and
     normalizing all descriptions to BSR style.
     """
-    logger.info(
-        "llm_call fn=reconcile_boq baseline=%d predictor=%d",
-        len(baseline_items),
-        len(item_predictor_items),
-    )
     prompt = _render_template(
         "gap_fill_boq_items.txt",
         project_info_json=json.dumps(project_info, ensure_ascii=True),
@@ -114,10 +100,8 @@ def gap_fill_boq_items(
     parsed = _safe_json_loads(content)
     items = parsed.get("items") if isinstance(parsed, dict) else None
     if not isinstance(items, list):
-        logger.warning("llm_call fn=reconcile_boq returned no items list — falling back to baseline")
         return baseline_items
     result = _normalize_boq_item_list(items)
-    logger.info("llm_call fn=reconcile_boq final_items=%d", len(result))
     return result
 
 

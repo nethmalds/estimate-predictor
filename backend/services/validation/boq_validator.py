@@ -3,9 +3,7 @@
 Called during Stage 8 before quantity take-off begins, to ensure the BOQ list
 is structurally sound before expensive downstream computations run.
 """
-from core.logging.logger import get_logger
 
-logger = get_logger(__name__)
 
 
 def validate_boq_items(items: list[dict]) -> dict:
@@ -42,13 +40,5 @@ def validate_boq_items(items: list[dict]) -> dict:
             errors.append(f"Item {i} ('{desc or '?'}'): missing unit.")
 
     is_valid = len(errors) == 0
-    logger.info(
-        "boq_validation items=%d errors=%d is_valid=%s",
-        len(items),
-        len(errors),
-        is_valid,
-    )
-    for err in errors:
-        logger.warning("boq_validation_error: %s", err)
 
     return {"is_valid": is_valid, "errors": errors}

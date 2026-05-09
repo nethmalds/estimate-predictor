@@ -292,10 +292,10 @@ export function ProjectBasicsStep({ data, onChange, errors }: Props) {
                   <img
                     src={entry.previewUrl}
                     alt={entry.file.name}
-                    className="w-10 h-10 object-cover rounded-md flex-shrink-0 border border-zinc-700"
+                    className="w-10 h-10 object-cover rounded-md shrink-0 border border-zinc-700"
                   />
                 ) : (
-                  <div className="w-10 h-10 flex items-center justify-center rounded-md bg-zinc-700 flex-shrink-0 border border-zinc-600">
+                  <div className="w-10 h-10 flex items-center justify-center rounded-md bg-zinc-700 shrink-0 border border-zinc-600">
                     <FileText className="w-5 h-5 text-zinc-400" />
                   </div>
                 )}
@@ -331,7 +331,7 @@ export function ProjectBasicsStep({ data, onChange, errors }: Props) {
                 </div>
 
                 {/* File type badge */}
-                <div className="flex-shrink-0">
+                <div className="shrink-0">
                   {isImage(entry.file) ? (
                     <ImageIcon className="w-4 h-4 text-zinc-500" />
                   ) : (
@@ -343,7 +343,7 @@ export function ProjectBasicsStep({ data, onChange, errors }: Props) {
                 <button
                   type="button"
                   onClick={(e) => { e.stopPropagation(); removeFile(entry.id); }}
-                  className="flex-shrink-0 p-1 rounded-md text-zinc-500 hover:text-red-400 hover:bg-red-400/10 transition-colors"
+                  className="shrink-0 p-1 rounded-md text-zinc-500 hover:text-red-400 hover:bg-red-400/10 transition-colors"
                   title="Remove file"
                 >
                   <X className="w-4 h-4" />

@@ -1,14 +1,13 @@
 import threading
 from pathlib import Path
-from core.logging.logger import get_logger
 
-logger = get_logger(__name__)
 
-from services.rag_process.db import init_db, upsert_bsr_items
+from services.rag_process.db import upsert_bsr_items, init_db
 from services.rag_process.embeddings import EmbeddingProvider
 from services.rag_process.pdf_parser import parse_bsr_pdf
-from services.rag_process.retriever import retrieve_candidates
+from services.rag_process.retriever import retrieve_candidates, extract_query_features, clean_boq_query
 from services.rag_process.scorer import score_candidate
+from services.rag_process.matcher import match_boq_items_batch as _match_boq_items_batch
 from core.config.settings import settings
 from infrastructure.data_layer.vector_db.vector_store import ChromaBSRVectorStore
 from infrastructure.data_layer.database.session import SessionLocal
@@ -36,16 +35,14 @@ class BOQMatcherService:
         return self.vector_store
 
     def bootstrap(self) -> None:
-        init_db()
         with SessionLocal() as db:
             count = db.query(BSRItem).count()
             if count == 0:
-                logger.info("Database is empty. Auto-ingesting BSR PDF...")
                 pdf_path = Path(__file__).resolve().parents[2] / "infrastructure" / "data_layer" / "storage" / "bsr_wp_2025.pdf"
                 if pdf_path.exists():
                     self.ingest_bsr_pdf(str(pdf_path))
                 else:
-                    logger.warning(f"Auto-ingest skipped: PDF not found at {pdf_path}")
+                    pass  # PDF not present; DB will remain empty until manually ingested
 
     def ingest_bsr_pdf(self, pdf_path: str) -> dict:
         parsed_items = parse_bsr_pdf(pdf_path)
@@ -54,6 +51,9 @@ class BOQMatcherService:
 
         with SessionLocal() as db:
             db_items = upsert_bsr_items(db, parsed_items)
+            db.commit()
+            for item in db_items:
+                db.refresh(item)
 
         vector_records = []
         embedding_texts = []
@@ -123,6 +123,10 @@ class BOQMatcherService:
                     "matched_fields": best_scores["matched_fields"],
                 },
             }
+
+    def match_boq_items_batch(self, items: list[dict]) -> list[dict]:
+        """Batch-match a list of BOQ items against BSR, skipping contractual ones."""
+        return _match_boq_items_batch(items, self.match_boq_item)
 
 
 service = BOQMatcherService()

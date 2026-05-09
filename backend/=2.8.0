@@ -1,0 +1,8 @@
+Collecting PyJWT
+  Downloading pyjwt-2.12.1-py3-none-any.whl (29 kB)
+Requirement already satisfied: typing_extensions>=4.0 in d:\my career\computer science degree\3rd year\final year project\codebase\backend\.venv\lib\site-packages (from PyJWT) (4.15.0)
+Installing collected packages: PyJWT
+Successfully installed PyJWT-2.12.1
+
+[notice] A new release of pip is available: 23.0.1 -> 26.1.1
+[notice] To update, run: python.exe -m pip install --upgrade pip

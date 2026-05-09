@@ -31,9 +31,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from core.logging.logger import get_logger
 
-logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Model artifact path
@@ -59,14 +57,8 @@ def _load_model() -> None:
             "joblib is required for Item Predictor. Install with: pip install joblib"
         ) from exc
 
-    logger.info("item_predictor_load path=%s", _MODEL_PATH)
     _artifact = joblib.load(str(_MODEL_PATH))
     mlb = _artifact["mlb"]
-    logger.info(
-        "item_predictor_loaded best=%s classes=%d",
-        _artifact.get("best_model_name", "?"),
-        len(mlb.classes_),
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -167,11 +159,6 @@ def predict_boq_items_with_confidence(project_info: dict) -> list[dict]:
         raw_cats, key=lambda c: probs.get(c, 0.0), reverse=True
     )
 
-    logger.info(
-        "item_predictor_predict categories=%d %s",
-        len(predicted_categories),
-        predicted_categories,
-    )
 
     # -----------------------------------------------------------------------
     # Expand categories → item descriptions via cat_to_items (up to 10 each)
@@ -207,7 +194,6 @@ def predict_boq_items_with_confidence(project_info: dict) -> list[dict]:
         key=lambda d: d["source_confidence"],
         reverse=True,
     )
-    logger.info("item_predictor_predict items=%d", len(result))
     return result
 
 
@@ -410,13 +396,56 @@ def _safe_le_transform(le: Any, value: str) -> int:
 
 def _apply_rules(project_info: dict, items: set[str]) -> set[str]:
     parameters: dict = project_info.get("parameters") or {}
+    building_type = str(project_info.get("building_type") or "").lower()
     floors = int(project_info.get("floors") or 1)
     roof_raw = str(parameters.get("roof_type") or "").strip().lower()
 
+    # Universal rules
     if floors > 1:
         items.add("staircase work")
 
     if "flat" in roof_raw or "slab" in roof_raw or "rc" in roof_raw:
         items.add("waterproofing work")
+
+    # ── Commercial rules ──────────────────────────────────────────────────────
+    if building_type == "commercial":
+        primary_use = str(parameters.get("primary_use_type") or "").strip().lower()
+        washroom_count = int(parameters.get("washroom_count") or 1)
+
+        items.add("commercial toilet / washroom fit-out")
+
+        if primary_use in ("restaurant", "food & beverage", "kitchen"):
+            items.add("commercial kitchen exhaust and ventilation")
+            items.add("grease trap and drainage")
+
+        if primary_use in ("hotel", "serviced apartment"):
+            items.add("elevator / lift installation")
+
+        if washroom_count >= 4:
+            items.add("centralised plumbing riser and distribution")
+
+    # ── Industrial rules ──────────────────────────────────────────────────────
+    if building_type == "industrial":
+        heavy_machinery = str(parameters.get("heavy_machinery_load") or "").strip().lower()
+        hazardous = str(parameters.get("hazardous_materials") or "").strip().lower()
+        ventilation = str(parameters.get("specialized_ventilation") or "").strip().lower()
+        facility = str(parameters.get("facility_type") or "").strip().lower()
+
+        if heavy_machinery == "yes":
+            items.add("heavy-duty industrial floor slab")
+            items.add("reinforced foundation for machinery")
+
+        if hazardous == "yes":
+            items.add("chemical-resistant floor coating")
+            items.add("fire suppression system")
+            items.add("hazardous material containment bund")
+
+        if ventilation == "yes":
+            items.add("industrial fume extraction system")
+            items.add("dust collection and filtration unit")
+
+        if "cold storage" in facility:
+            items.add("cold room insulated panel system")
+            items.add("refrigeration plant room")
 
     return items

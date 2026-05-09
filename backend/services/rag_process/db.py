@@ -65,11 +65,6 @@ def upsert_bsr_items(session: Session, items: Iterable[dict]) -> list[BSRItem]:
         session.add(created)
         persisted.append(created)
 
-    session.commit()
-
-    for record in persisted:
-        session.refresh(record)
-
     return persisted
 
 

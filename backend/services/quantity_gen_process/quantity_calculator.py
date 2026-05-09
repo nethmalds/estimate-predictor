@@ -41,9 +41,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from core.logging.logger import get_logger
 
-logger = get_logger(__name__)
 
 _MODEL_PATH = (
     Path(__file__).resolve().parents[2]
@@ -61,18 +59,12 @@ def _try_load_quantity_predictor() -> None:
         return
     _quantity_predictor_checked = True
     if not _MODEL_PATH.exists():
-        logger.warning("quantity_predictor not found at %s — quantities will be 0", _MODEL_PATH)
         return
     try:
         import joblib  # type: ignore[import]
         _artifact = joblib.load(str(_MODEL_PATH))
-        logger.info(
-            "quantity_predictor loaded model=%s item_models=%d",
-            type(_artifact.get("model")).__name__,
-            len(_artifact.get("item_models", {})),
-        )
     except Exception:
-        logger.exception("quantity_predictor load failed")
+        _artifact = None
 
 
 def predict_quantity(
@@ -279,7 +271,6 @@ def _build_feature_array(row: dict[str, Any]) -> "tuple[Any, list[str]]":
         else:
             feats.append(0.0)
             unknown_names.append(col)
-            logger.debug("quantity_predictor: unknown value col=%s val=%r", col, val)
 
     return np.array(feats, dtype=float).reshape(1, -1), unknown_names
 
@@ -377,10 +368,6 @@ def _predict_with_quantity_predictor(
             "Material_Type":  material_type,
         }
 
-        logger.debug(
-            "quantity_predictor row: category=%s work_category=%s unit=%s material=%s area=%.1f floors=%d",
-            raw_category, work_category, unit, material_type, area_m2, floors,
-        )
 
         X, unknown_names = _build_feature_array(row)
 
@@ -408,7 +395,6 @@ def _predict_with_quantity_predictor(
         model_scope = "item_level" if is_item_level else "global"
 
         if model is None:
-            logger.warning("quantity_predictor: no global model in bundle")
             return {
                 "quantity":              0.0,
                 "method":                "quantity_predictor",
@@ -443,7 +429,6 @@ def _predict_with_quantity_predictor(
         }
 
     except Exception:
-        logger.exception("quantity_predictor inference failed")
         return {
             "quantity":              0.0,
             "method":                "quantity_predictor",

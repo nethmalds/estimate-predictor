@@ -4,6 +4,7 @@ Stage decomposition (Phase 4):
   1. Candidate generation — collect all available quantity estimates per item.
   2. Reconciliation        — fuse candidates with unit-aware confidence weighting.
   3. Validation            — post-reconciliation quality checks.
+  4. Unit dimensionality   — IMP-QTY-02: validate quantity against BSR unit dimensionality.
 
 Branch A (floorplan geometry available):
   Candidate sources: geometry / rule_based  +  ML (item-level fused in, global for fallback).
@@ -32,9 +33,7 @@ from services.quantity_gen_process.confidence_scoring import (
     candidate_weight,
 )
 from services.quantity_gen_process.quantity_validator import validate_quantity
-from core.logging.logger import get_logger
 
-logger = get_logger(__name__)
 
 # Categories whose quantity is a QS convention (lump sum = 1.0) — skip ML fusion.
 _LUMP_SUM_CATEGORIES: frozenset[str] = frozenset({
@@ -43,6 +42,81 @@ _LUMP_SUM_CATEGORIES: frozenset[str] = frozenset({
     "other",
     "testing_and_commissioning",
 })
+
+
+# ---------------------------------------------------------------------------
+# IMP-QTY-02: Unit dimensionality validation
+# ---------------------------------------------------------------------------
+
+# Mapping: category → expected dimensionality ("volume", "area", "length", "count", "mass", "lump")
+_CATEGORY_DIMENSIONALITY: dict[str, str] = {
+    "excavation_and_earthwork":  "volume",   # m³
+    "piling_and_substructure":   "volume",   # m³
+    "concrete_works":            "volume",   # m³
+    "formwork":                  "area",     # m²
+    "reinforcement":             "mass",     # kg
+    "brick_masonry":             "area",     # m²
+    "plastering_and_rendering":  "area",     # m²
+    "painting_and_finishes":     "area",     # m²
+    "roofing_and_ceiling":       "area",     # m²
+    "flooring_and_tiling":       "area",     # m²
+    "external_and_civil_works":  "area",     # m²
+    "demolition_and_removal":    "area",     # m²
+    "doors_windows_and_glazing": "count",    # Nr
+    "sanitary_and_plumbing":     "count",    # Nr
+    "electrical_and_mechanical": "count",    # Nr
+    "preliminary_and_general":   "lump",     # Item
+    "testing_and_commissioning": "lump",     # Item
+    "miscellaneous":             "lump",     # Item
+}
+
+# Unit → dimensionality
+_UNIT_DIMENSIONALITY: dict[str, str] = {
+    "m³": "volume", "m3": "volume", "cum": "volume",
+    "m²": "area",   "m2": "area",   "sqm": "area",
+    "m":  "length",  "lm": "length", "rm": "length", "lineal m": "length",
+    "nr": "count",   "nr.": "count", "no": "count",  "no.": "count",
+    "each": "count", "set": "count", "pair": "count",
+    "kg":  "mass",   "kg.": "mass",  "ton": "mass",  "tonne": "mass",
+    "item": "lump",  "sum": "lump",  "lot": "lump",  "allow": "lump",
+}
+
+
+def _unit_dimensionality(unit: str) -> str | None:
+    """Return the dimensionality category for a given unit string."""
+    return _UNIT_DIMENSIONALITY.get(unit.lower().strip())
+
+
+def _validate_quantity_against_unit(item: dict) -> dict:
+    """IMP-QTY-02: Validate that the computed quantity is consistent with the BSR unit.
+
+    If the category expects a volume (m³) but the BSR unit is m (length), the
+    quantity is likely wrong.  In that case we flag the item with a warning and
+    reduce its quantity_confidence_score by 0.30 rather than silently passing.
+    """
+    unit = (item.get("unit") or item.get("preferred_unit") or "").strip()
+    category = (item.get("category") or "misc").lower()
+    quantity = float(item.get("quantity") or 0.0)
+
+    expected_dim = _CATEGORY_DIMENSIONALITY.get(category)
+    actual_dim = _unit_dimensionality(unit)
+
+    if expected_dim and actual_dim and expected_dim != actual_dim:
+        existing_warning = item.get("quantity_warning") or ""
+        mismatch_msg = (
+            f"Unit dimensionality mismatch: category '{category}' expects "
+            f"'{expected_dim}' but BSR unit '{unit}' is '{actual_dim}'. "
+            "Quantity may be unreliable."
+        )
+        item["quantity_warning"] = (existing_warning + " | " + mismatch_msg).strip(" | ")
+        # Downgrade confidence
+        current_conf = float(item.get("quantity_confidence_score") or 0.5)
+        item["quantity_confidence_score"] = max(0.0, round(current_conf - 0.30, 4))
+        item["quantity_confidence"] = item["quantity_confidence_score"]
+        # Flag for review
+        item["needs_rate_review"] = True
+
+    return item
 
 
 def compute_quantities(
@@ -74,11 +148,12 @@ def compute_quantities(
     has_geometry = _geometry_is_usable(floorplan_geometry)
 
     if has_geometry:
-        logger.info("qto_engine branch=floorplan items=%d", len(boq_items))
-        return _compute_with_geometry(boq_items, project_info, floorplan_geometry, floors, parameters)
+        result = _compute_with_geometry(boq_items, project_info, floorplan_geometry, floors, parameters)
+    else:
+        result = _compute_quantity_predictor_all(boq_items, project_info)
 
-    logger.info("qto_engine branch=no_floorplan items=%d", len(boq_items))
-    return _compute_quantity_predictor_all(boq_items, project_info)
+    # IMP-QTY-02: validate each item's quantity against its BSR unit dimensionality
+    return [_validate_quantity_against_unit(item) for item in result]
 
 
 # ---------------------------------------------------------------------------
@@ -94,7 +169,6 @@ def _compute_with_geometry(
 ) -> list[dict]:
     # Stage 1: compute geometry confidence (feeds reconciliation weights)
     geo_conf = score_geometry_confidence(geometry)
-    logger.info("qto_engine geo_conf=%.4f", geo_conf)
 
     computed: list[dict] = []
     quantity_predictor_needed: list[dict] = []
@@ -153,11 +227,6 @@ def _compute_with_geometry(
         computed.extend(quantity_predictor_needed)
 
     geo_count = len(boq_items) - len(quantity_predictor_needed)
-    logger.info(
-        "qto_engine geometry_items=%d quantity_predictor_items=%d",
-        geo_count,
-        len(quantity_predictor_needed),
-    )
     return computed
 
 
@@ -286,8 +355,7 @@ def _resolve_quantity_predictor_items(
 
         category_total_qty = group_items[0]["_raw_cat_qty"]
         if category_total_qty <= 0:
-            logger.warning("qto_engine ML returned non-positive qty=%.4f for category=%s",
-                           category_total_qty, category)
+            continue
 
         weights = [_get_qs_weight(category, item.get("description", "")) for item in group_items]
         total_weight = sum(weights)

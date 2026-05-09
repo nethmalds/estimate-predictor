@@ -10,9 +10,7 @@ import urllib.request
 import urllib.error
 from pathlib import Path
 
-from core.logging.logger import get_logger
 
-logger = get_logger(__name__)
 
 # Resolve to  <backend_root>/temp/floorplans/
 _CACHE_DIR = Path(__file__).resolve().parents[2] / "temp" / "floorplans"
@@ -40,11 +38,9 @@ def download_and_cache(url: str) -> str:
     cache_path = _cache_path_for(url, ext)
 
     if cache_path.exists():
-        logger.info("floorplan_cache hit path=%s", cache_path)
         return str(cache_path)
 
     _CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    logger.info("floorplan_cache miss — downloading url=%s", url)
 
     try:
         with urllib.request.urlopen(url, timeout=30) as response:  # noqa: S310
@@ -57,7 +53,6 @@ def download_and_cache(url: str) -> str:
         raise RuntimeError(f"Network error downloading floorplan url={url}: {exc}") from exc
 
     cache_path.write_bytes(data)
-    logger.info("floorplan_cache stored path=%s bytes=%d", cache_path, len(data))
     return str(cache_path)
 
 

@@ -1,7 +1,5 @@
 """Rate resolver — applies location and soil condition adjusters to BSR base rates (Q3 fix)."""
-from core.logging.logger import get_logger
 
-logger = get_logger(__name__)
 
 # Location-based cost adjustment factors relative to Colombo baseline.
 # Source: BSR 2025 regional cost indices.
@@ -90,15 +88,9 @@ def resolve_rate(item: dict, project_info: dict) -> float:
     adjusted_rate = round(base_rate * location_factor * soil_factor, 2)
 
     if location_factor != 1.00 or soil_factor != 1.00:
-        logger.debug(
-            "rate_adjusted category=%s base=%.2f location=%s(x%.2f) soil=%s(x%.2f) adjusted=%.2f",
-            category,
-            base_rate,
-            location,
-            location_factor,
-            soil_condition,
-            soil_factor,
-            adjusted_rate,
-        )
+        item["rate_adjustment"] = {
+            "location_factor": location_factor,
+            "soil_factor": soil_factor,
+        }
 
     return adjusted_rate

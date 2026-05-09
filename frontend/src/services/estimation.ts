@@ -7,6 +7,7 @@ export const buildUrl = (path: string) => `${API_BASE_URL}${path}`;
 export type WizardSubmitResponse = {
 	session_id: string;
 	status: string;
+	estimate_id?: string;
 };
 
 export type WizardValidateResponse = {
@@ -37,11 +38,13 @@ export async function validateWizardForm(
 
 export async function submitWizardForm(
 	payload: Record<string, unknown>,
-	options?: { signal?: AbortSignal }
+	options?: { signal?: AbortSignal; accessToken?: string }
 ): Promise<WizardSubmitResponse> {
+	const headers: Record<string, string> = { "Content-Type": "application/json" };
+	if (options?.accessToken) headers["Authorization"] = `Bearer ${options.accessToken}`;
 	const response = await fetch(buildUrl("/api/estimate-project/form/submit"), {
 		method: "POST",
-		headers: { "Content-Type": "application/json" },
+		headers,
 		body: JSON.stringify(payload),
 		signal: options?.signal,
 	});
@@ -49,8 +52,14 @@ export async function submitWizardForm(
 		let message = "Submission failed";
 		try {
 			const data = await response.json();
-			if (typeof data?.detail === "string") message = data.detail;
+			// Backend error envelope: { error: { message, code, details } }
+			if (data?.error?.message) message = data.error.message;
+			else if (typeof data?.detail === "string") message = data.detail;
 			else if (data?.detail?.message) message = data.detail.message;
+			else if (Array.isArray(data?.detail) && data.detail.length > 0) {
+				const first = data.detail[0];
+				message = first?.msg ?? first?.message ?? JSON.stringify(first);
+			}
 		} catch { /* ignore */ }
 		throw new Error(message);
 	}

@@ -15,7 +15,7 @@ export function WizardProgress({ steps, currentStep }: Props) {
   return (
     <div className="relative z-0 mb-16 mt-6 px-2 sm:px-6">
       {/* Background Track Line */}
-      <div className="absolute top-4 left-6 right-6 sm:left-10 sm:right-10 h-[2px] bg-zinc-800 -z-10">
+      <div className="absolute top-4 left-6 right-6 sm:left-10 sm:right-10 h-0.5 bg-zinc-800 -z-10">
         {/* Active Track Line */}
         <div
           className="absolute top-0 left-0 h-full bg-blue-600 transition-all duration-500 ease-out"
@@ -40,7 +40,7 @@ export function WizardProgress({ steps, currentStep }: Props) {
                     : "border-zinc-700 text-zinc-500"
                 }`}
               >
-                {isCompleted ? <Check className="w-4 h-4 stroke-[3]" /> : step.id}
+                {isCompleted ? <Check className="w-4 h-4 stroke-3" /> : step.id}
               </div>
               
               {/* Step Title */}

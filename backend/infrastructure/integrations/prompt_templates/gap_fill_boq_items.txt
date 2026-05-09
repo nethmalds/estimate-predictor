@@ -7,9 +7,21 @@ You have two input sources:
 Your task is to produce ONE final, clean, standardized Bill of Quantities for this project by:
 - Starting from the baseline BOQ as the primary source.
 - Reviewing each Item Predictor candidate: add it ONLY if it is genuinely missing from the baseline AND strictly required by the project scope.
-- Removing any baseline item that is irrelevant, out of scope, or conflicts with the stated project parameters (e.g. remove asbestos roofing if roof_type is flat_slab; remove pile foundations if soil_condition is normal; remove bedroom items for commercial buildings).
+- Removing any baseline item that is irrelevant, out of scope, or conflicts with the stated project parameters (e.g. remove asbestos roofing if roof_type is flat_slab; remove pile foundations if soil_condition is normal; remove bedroom items for commercial buildings; remove decorative gypsum ceilings and decorative tiling for industrial buildings).
 - Deduplicating semantically: if two items describe the same work, keep the better BSR-style description and discard the duplicate.
 - Normalizing all descriptions to strict Sri Lanka BSR 2025 (Western Province) style.
+
+Building-type specific reconciliation rules:
+Commercial buildings:
+  - REMOVE: domestic bedroom wardrobes, domestic kitchen fittings, residential balcony items, garden/landscaping items unless external_works_scope requires them.
+  - ADD if missing: washroom fit-out items proportional to washroom_count (WC suites, wash basins, hand dryers, urinals).
+  - ADD if missing: primary_use_type specific items — e.g. commercial kitchen exhaust for Restaurant; lift shaft for Hotel; lab fittings for Educational; medical gas pipework for Healthcare.
+Industrial buildings:
+  - REMOVE: decorative gypsum ceiling boards, decorative ceramic/porcelain floor tiles, residential-grade emulsion paint finishes.
+  - ADD if missing and heavy_machinery_load == "yes": reinforced industrial floor slab item; machinery foundation item.
+  - ADD if missing and hazardous_materials == "yes": chemical-resistant floor coating, fire suppression system, bunding/containment item.
+  - ADD if missing and specialized_ventilation == "yes": industrial extract fan system, fume hoods, ducting item.
+  - ADD if missing and facility_type == "Cold Storage": insulated sandwich panel wall/roof system, refrigeration plant room.
 
 Project Information:
 $project_info_json
@@ -36,6 +48,14 @@ Rules:
 - Do NOT return "added_items" — the key must be "items".
 - Use strict Sri Lanka BSR 2025 (Western Province) style descriptions.
 - Include all standard preliminary items.
+- MANDATORY COVERAGE CHECK: Before returning, verify the following sections are present with at least the minimum count. If any section is below minimum, add items to bring it up:
+  * preliminary_and_general: ≥5, excavation_and_earthwork: ≥4, piling_and_substructure: ≥5
+  * concrete_works: ≥8 (per floor, per element), formwork: ≥5, reinforcement: ≥4
+  * brick_masonry: ≥4, plastering_and_rendering: ≥4, painting_and_finishes: ≥4
+  * roofing_and_ceiling: ≥5, doors_windows_and_glazing: ≥6, flooring_and_tiling: ≥4
+  * sanitary_and_plumbing: ≥8, electrical_and_mechanical: ≥8, testing_and_commissioning: ≥2
+- Generate per-floor variants for concrete works, masonry, plastering, painting, flooring when floors > 1.
+- MINIMUM TOTAL: For 1-storey ≥60; 2-storey ≥100; 3+ storey ≥120 items in final list.
 - Do NOT include items that contradict the project parameters.
 - Return JSON only. No markdown, no explanation.
 

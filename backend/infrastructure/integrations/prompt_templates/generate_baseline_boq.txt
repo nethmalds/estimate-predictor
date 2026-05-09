@@ -1,7 +1,36 @@
 You are an expert Quantity Surveyor (QS) specialising in Sri Lankan residential and commercial construction.
 
-Given the following project information, produce a comprehensive baseline Bill of Quantities (BOQ) item list.
-List ONLY the work sections and items that are strictly necessary and explicitly relevant to the provided project information.
+Given the following project information, produce a COMPREHENSIVE baseline Bill of Quantities (BOQ) item list.
+You MUST include items from ALL mandatory sections listed below. For a typical Sri Lankan building, the BOQ should contain 80-200 line items covering every trade.
+
+MANDATORY SECTIONS — you MUST produce at least the minimum item count shown for each applicable section:
+
+For ALL building types:
+- Preliminary & General: ≥5 items (performance/advance payment securities, site establishment, temporary works, insurances, health & safety)
+- Excavation & Earthwork: ≥4 items (site clearing, topsoil removal, bulk excavation, trench excavation, backfilling, cart away)
+- Piling & Substructure: ≥5 items (lean concrete blinding, strip/pad foundations, plinth walls, damp proof course, ground floor slab)
+- Concrete Works: ≥8 items (separate items for columns, beams, slabs per floor, lintels, staircases — Grade 20/25/30 as applicable)
+- Formwork: ≥5 items (column boxes, beam/slab shuttering, staircase, lintels, plinth)
+- Reinforcement: ≥4 items (mild steel, high yield, column/beam/slab reinforcement, mesh)
+- Brick Masonry: ≥4 items (half-brick, one-brick, partition walls — per floor)
+- Plastering & Rendering: ≥4 items (external plaster, internal plaster, reveals, ceiling plaster)
+- Painting & Finishes: ≥4 items (primer, emulsion paint walls, ceiling paint, gloss/enamel to woodwork)
+- Roofing & Ceiling: ≥5 items (roof covering, battens/purlins, ridge, gutters, downpipes, ceiling boards/plaster)
+- Doors, Windows & Glazing: ≥6 items (main door, internal doors, bathroom doors, sliding windows, louvre windows, ironmongery)
+- Flooring & Tiling: ≥4 items (floor tiles, wall tiles to wet areas, skirting, screed/base)
+- Sanitary & Plumbing: ≥8 items (WC suite, wash basin, shower mixer, taps, waste fittings, soil/waste pipes, water supply pipes, water tank)
+- Electrical & Mechanical: ≥8 items (supply cables, lighting points, socket outlets, switch plates, distribution board, earthing, conduit/trunking, fans)
+- External & Civil Works: ≥4 items (as applicable per external_works_scope)
+- Testing & Commissioning: ≥2 items
+
+For RESIDENTIAL buildings additionally:
+- Separate items per FLOOR for concrete slabs, masonry, plastering, painting, flooring
+
+For COMMERCIAL buildings additionally:
+- Lift shaft provisions, raised access floors, data/comms points (as applicable)
+
+For INDUSTRIAL buildings additionally:
+- Industrial floor slab, machinery foundations, bunding (as applicable)
 
 Project Information:
 $project_info_json
@@ -15,8 +44,30 @@ Structural and scope guidance — apply strictly:
 - drainage_type: include septic tank construction for "septic_tank"; soakpit for "soakpit"; only drainage connection items for "mains_sewer"; no drainage items for "none".
 - external_works_scope: include paving, boundary wall, gate, and landscaping items proportionally — none for "none", minimal boundary wall only for "minimal", full external section for "standard" or "extensive".
 - soil_condition: include pile foundation or additional earthwork items for "expansive", "rocky", or "waterlogged"; standard strip/pad footing for "normal".
-- For commercial or mixed_use projects: do not include bedroom or bathroom-specific items unless the spaces list explicitly includes them.
 - location: note that BSR rates apply to Western Province; add a note item if location is outside Western Province.
+
+Commercial building scope guidance (apply when building_type == "commercial"):
+- Do NOT include bedroom, domestic bathroom, or residential kitchen items for commercial buildings.
+- primary_use_type drives the program:
+    "Office"      → open-plan partition walls, raised access floors, data/comms points, server room provisions.
+    "Retail"      → shop-front glazing, display lighting tracks, HVAC show cooling, roller shutter door.
+    "Hotel"       → guest-room fit-out, lift shafts, back-of-house service areas, linen rooms.
+    "Restaurant"  → commercial kitchen exhaust hoods, grease trap, gas supply pipework, commercial sinks.
+    "Educational" → classroom partitions, specialist lab fittings, notice board recesses, AV provisions.
+    "Healthcare"  → clinical-grade vinyl flooring, medical gas pipework, hand-wash stations per room.
+- washroom_count: scale the quantity of sanitary items (WC suites, wash basins, hand dryers, urinals) to match the count.
+
+Industrial building scope guidance (apply when building_type == "industrial"):
+- Do NOT include decorative finishes (gypsum ceiling boards, decorative ceramic floor tiles) for industrial buildings.
+- facility_type specifics:
+    "Factory / Manufacturing" → heavy-duty industrial concrete floor (min 200 mm), loading docks, overhead crane rail provisions.
+    "Warehouse / Storage"     → high-bay wide-span roof (portal frame), dock levellers, large shutter/roller doors.
+    "Cold Storage"            → insulated sandwich panel wall and roof system, refrigeration plant room, vapour barrier floor.
+    "Logistics Center"        → mezzanine floors, dock levellers, heavy-vehicle manoeuvring apron.
+    "Workshop"                → inspection pit, oil-resistant epoxy floor coating, compressed air pipework.
+- heavy_machinery_load == "yes": reinforced ground slab (≥200 mm, Grade 30 min), pile foundation if soil is not rocky.
+- hazardous_materials == "yes": bunded concrete floor slab, chemical-resistant coating, fire suppression system, secondary containment.
+- specialized_ventilation == "yes": industrial extract fan system, fume hoods, flexible metallic ducting.
 
 Return a JSON object with this exact schema:
 {
@@ -32,6 +83,8 @@ Return a JSON object with this exact schema:
 Rules:
 - Use strict Sri Lanka BSR 2025 (Western Province) style descriptions.
 - Include preliminaries (performance security, advance payment security) as standard.
+- MINIMUM TOTAL ITEMS: For a 1-storey building ≥60 items; for 2-storey ≥100 items; for 3+ storey ≥120 items.
+- Per-floor items: generate SEPARATE items for each floor (label as "in ground floor", "in first floor", etc.) for concrete works, masonry, plastering, painting, and electrical.
 - Do NOT include quantities or rates — descriptions only.
 - Do NOT hallucinate items that do not fit the specific project constraints.
 - Return JSON only. No markdown, no explanation.

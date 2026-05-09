@@ -10,13 +10,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from core.logging.logger import get_logger
 from services.floorplan_process.geometry_extraction.yolo_detector import (
     detect,
     pixels_to_m2,
 )
 
-logger = get_logger(__name__)
 
 
 def get_detection_confidence(image_path: str) -> float:
@@ -39,10 +37,6 @@ def preprocess_image(image_path: str) -> dict:
     size_bytes = p.stat().st_size
     suffix = p.suffix.lower()
 
-    logger.info(
-        "preprocess_image path=%s size_bytes=%d suffix=%s",
-        image_path, size_bytes, suffix,
-    )
     return {
         "image_path": image_path,
         "size_bytes": size_bytes,
@@ -62,10 +56,6 @@ def detect_openings(image_path: str) -> dict:
     doors   = result["doors"]
     windows = result["windows"]
 
-    logger.info(
-        "detect_openings path=%s doors=%d windows=%d",
-        image_path, doors, windows,
-    )
     return {"doors": doors, "windows": windows, "method": "yolo_new_best"}
 
 
@@ -102,8 +92,4 @@ def extract_room_boundaries(image_path: str) -> dict:
             "area_m2": round(area_m2, 2),
         })
 
-    logger.info(
-        "extract_room_boundaries path=%s rooms=%d",
-        image_path, len(rooms),
-    )
     return {"rooms": rooms, "method": "yolo_new_best"}

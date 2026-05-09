@@ -33,9 +33,7 @@ from __future__ import annotations
 
 import math
 
-from core.logging.logger import get_logger
 
-logger = get_logger(__name__)
 
 # (lo_multiplier, hi_multiplier) relative to total_floor_area_m2 × floor_count.
 # None means no lower / upper bound in that direction.
@@ -99,7 +97,6 @@ def validate_quantity(
     if qty < 0:
         item["quantity"] = 0.0
         item["quantity_warning"] = "negative_clamped_to_zero"
-        logger.debug("quantity_validator clamped negative qty item=%s", item.get("description", ""))
         return item
 
     # ── Rule 2: zero quantity ────────────────────────────────────────────────
@@ -132,13 +129,6 @@ def validate_quantity(
 
     if warning_parts:
         item["quantity_warning"] = "; ".join(warning_parts)
-        logger.debug(
-            "quantity_validator flagged item=%s category=%s qty=%.2f warning=%s",
-            item.get("description", ""),
-            category,
-            qty,
-            item["quantity_warning"],
-        )
 
     # ── Phase 12 additions ────────────────────────────────────────────────────
 
@@ -169,8 +159,6 @@ def _check_discrete_unit(item: dict) -> None:
         existing = item.get("quantity_warning", "")
         flag = "non_integer_discrete_quantity"
         item["quantity_warning"] = f"{existing}; {flag}" if existing else flag
-        logger.debug("quantity_validator discrete_non_integer item=%s qty=%.3f unit=%s",
-                     item.get("description", ""), qty, unit)
 
 
 def _check_disagreement_score(item: dict) -> None:
