@@ -9,8 +9,7 @@ import {
   type BoqItem,
 } from "@/components/results/ResultsComponents";
 import { Download, FileText, TrendingUp, DollarSign, Edit3, Check, X } from "lucide-react";
-
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+import { patchEstimate } from "@/services/estimates.service";
 
 interface Estimate {
   id: string;
@@ -47,11 +46,7 @@ export default function EstimateDetailClient({ estimate, accessToken }: { estima
   const saveEdits = async () => {
     setSaving(true);
     try {
-      await fetch(`${BACKEND_URL}/api/estimates/${estimate.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
-        body: JSON.stringify({ project_name: projectName, notes }),
-      });
+      await patchEstimate(estimate.id, { project_name: projectName, notes }, accessToken);
       setEditing(false);
     } finally {
       setSaving(false);

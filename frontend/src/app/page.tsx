@@ -68,7 +68,7 @@ export default function LandingPage() {
         </p>
         <div className="flex flex-col sm:flex-row gap-3 justify-center">
           <Link
-            href="/estimate/new"
+            href="/login"
             className="flex items-center justify-center gap-2 px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold text-base transition-colors"
           >
             Start Free Estimate <ChevronRight className="w-4 h-4" />
@@ -131,7 +131,7 @@ export default function LandingPage() {
         <h2 className="text-3xl font-bold mb-4">Ready to estimate your project?</h2>
         <p className="text-zinc-400 mb-8">No account required to start. Results in under 2 minutes.</p>
         <Link
-          href="/estimate/new"
+          href="/login"
           className="inline-flex items-center gap-2 px-10 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold text-base transition-colors"
         >
           Start Free Estimate <ChevronRight className="w-4 h-4" />

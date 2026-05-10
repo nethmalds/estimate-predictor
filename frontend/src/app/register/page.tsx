@@ -4,8 +4,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Building2, Loader2 } from "lucide-react";
-
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+import { register } from "@/services/auth.service";
+import { ApiError } from "@/types/api";
 
 const ROLES = [
   { value: "homeowner", label: "Homeowner" },
@@ -28,20 +28,10 @@ export default function RegisterPage() {
     }
     setLoading(true);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/users/register`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: form.name, email: form.email, password: form.password, role: form.role }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error?.message || data.detail || "Registration failed.");
-        setLoading(false);
-        return;
-      }
+      await register({ name: form.name, email: form.email, password: form.password, role: form.role as "homeowner" | "qs_engineer" | "contractor" });
       router.push("/login?registered=1");
-    } catch {
-      setError("Network error. Please try again.");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Registration failed.");
       setLoading(false);
     }
   };

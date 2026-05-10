@@ -35,9 +35,6 @@ For INDUSTRIAL buildings additionally:
 Project Information:
 $project_info_json
 
-Item Predictor Hints (machine learning predicted work items — use as guidance for coverage, not as a mandatory list):
-$item_predictor_hints_json
-
 Structural and scope guidance — apply strictly:
 - structural_system: include formwork, reinforcement, and grade concrete items ONLY for "framed" or "hybrid"; omit them for "load_bearing".
 - roof_type: select the correct roofing section items — flat slab includes waterproofing; pitched/half_pitched includes tile battens and ridges; asbestos and metal_sheet include sheet fixing items.

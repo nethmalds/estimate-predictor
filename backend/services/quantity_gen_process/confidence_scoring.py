@@ -36,7 +36,7 @@ Candidate confidence weights
 Reconciliation — Phase 10
 --------------------------
 Continuous units (m, m², m³, Kg …):
-  q_final = Σ(w_i × q_i) / Σ(w_i)
+  q_final = (Σ q_i) / n          ← arithmetic mean across valid sources
 
 Discrete units (Nr, Item, Pair, Set …):
   i* = argmax(w_i),  q_final = ceil(q_{i*})
@@ -253,16 +253,11 @@ def fuse_candidates(
         )
         conf = round(weights[winner_idx] / _MAX_SINGLE_WEIGHT, 4)
     else:
-        # Continuous units: weighted mean
-        if total_w <= 0:
-            fused = sum(c[0] for c in valid) / len(valid)
-            fused = round(max(fused, 0.0), 2)
-            conf = 0.0
-        else:
-            fused = sum(w * c[0] for w, c in zip(weights, valid)) / total_w
-            fused = round(max(fused, 0.0), 2)
-            max_possible_w = len(valid) * _MAX_SINGLE_WEIGHT
-            conf = round(min(total_w / max(max_possible_w, 1e-9), 1.0), 4)
+        # Continuous units: arithmetic mean across valid sources (target spec)
+        fused = sum(c[0] for c in valid) / len(valid)
+        fused = round(max(fused, 0.0), 2)
+        # Confidence = average of individual source weights
+        conf = round(sum(weights) / len(weights), 4) if weights else 0.0
 
         dominant_idx = max(range(len(weights)), key=lambda i: weights[i])
         dominant_source = valid[dominant_idx][1]

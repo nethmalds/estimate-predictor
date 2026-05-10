@@ -193,22 +193,37 @@ def normalize_wizard_to_project_info(payload: dict) -> dict:
     # Track what came from the user explicitly (all wizard fields are user-provided)
     explicit_parameters = [k for k, v in parameters.items() if v is not None]
 
+    # Collect preprocessing warnings for transparency
+    preprocessing_warnings: list[str] = []
+    if not payload.get("finish_level"):
+        preprocessing_warnings.append("finish_level not provided — will use default.")
+    if not payload.get("structural_system"):
+        preprocessing_warnings.append("structural_system not provided — will use default.")
+    if not payload.get("location"):
+        preprocessing_warnings.append("location not provided — defaulting to Colombo.")
+
     return {
-        "building_type":       building_type,
-        "floors":              floors,
-        "spaces":              [],
-        "parameters":          parameters,
-        "floor_areas":         floor_areas,
-        "qs_specifications":   {},
-        "explicit_parameters": explicit_parameters,
-        "assumptions":         [],
-        "applied_defaults":    [],
-        "value_sources":       {k: "user" for k in explicit_parameters},
+        "building_type":          building_type,
+        "floors":                 floors,
+        "spaces":                 [],
+        "parameters":             parameters,
+        "floor_areas":            floor_areas,
+        "qs_specifications":      {},
+        "explicit_parameters":    explicit_parameters,
+        "assumptions":            [],
+        "applied_defaults":       [],
+        "value_sources":          {k: "user" for k in explicit_parameters},
+        "preprocessing_warnings": preprocessing_warnings,
     }
 
 
 def validate_wizard_payload(payload: dict) -> dict[str, str]:
     """Validate a wizard form payload and return a dict of field -> error_message.
+
+    Covers:
+    - Type and enum membership checks for all fields.
+    - Logical consistency checks (floor count vs area rows, area sanity).
+    - Acceptable-range validations for numeric fields.
 
     Returns an empty dict if there are no validation errors.
     """
@@ -225,20 +240,37 @@ def validate_wizard_payload(payload: dict) -> dict[str, str]:
             errors["floor_count"] = "Floor count must be between 1 and 100."
     except (TypeError, ValueError):
         errors["floor_count"] = "Please enter a valid floor count."
+        fc = 0
 
     floor_areas: list[dict] = payload.get("floor_areas") or []
     if not floor_areas:
         errors["floor_areas"] = "Please provide area for at least one floor."
     else:
+        total_m2 = 0.0
         for i, row in enumerate(floor_areas):
             try:
                 v = float(row.get("area_value", 0) or 0)
                 if v <= 0:
                     errors[f"floor_areas[{i}]"] = f"Floor {i+1} area must be greater than zero."
+                unit = str(row.get("area_unit", "sqft")).lower().strip()
+                total_m2 += v * 0.0929 if unit not in {"m2", "m²"} else v
             except (TypeError, ValueError):
                 errors[f"floor_areas[{i}]"] = f"Floor {i+1} area is not a valid number."
 
-    # Required construction detail fields (frontend enforces these; backend mirrors the rule)
+        # Area sanity: realistic construction range 20 m² – 50 000 m²
+        if total_m2 > 0 and not (20 <= total_m2 <= 50_000):
+            if total_m2 < 20:
+                errors["floor_areas"] = (
+                    f"Total floor area ({total_m2:.1f} m²) is unrealistically small. "
+                    "Minimum expected is 20 m²."
+                )
+            else:
+                errors["floor_areas"] = (
+                    f"Total floor area ({total_m2:.1f} m²) exceeds the maximum supported "
+                    "project size (50 000 m²). Please contact support for large projects."
+                )
+
+    # Required construction detail fields
     for required_field in ("finish_level", "structural_system", "roof_type", "ceiling_type"):
         if not payload.get(required_field):
             label = required_field.replace("_", " ").title()
@@ -247,6 +279,10 @@ def validate_wizard_payload(payload: dict) -> dict[str, str]:
     finish_level = payload.get("finish_level")
     if finish_level and finish_level not in {"standard", "semi_luxury", "luxury"}:
         errors["finish_level"] = "Invalid finish level selection."
+
+    structural_system = payload.get("structural_system")
+    if structural_system and structural_system not in {"framed", "load_bearing", "hybrid"}:
+        errors["structural_system"] = "Invalid structural system selection."
 
     roof_type = payload.get("roof_type")
     valid_roof = {"rc_flat_slab", "clay_tile", "asbestos_sheet", "metal_sheet", "other"}
@@ -257,6 +293,18 @@ def validate_wizard_payload(payload: dict) -> dict[str, str]:
     valid_ceiling = {"gypsum_mineral_fibre", "timber", "asbestos_flat", "concrete", "other"}
     if ceiling_type and ceiling_type not in valid_ceiling:
         errors["ceiling_type"] = "Invalid ceiling type selection."
+
+    soil_condition = payload.get("soil_condition")
+    if soil_condition and soil_condition not in {"normal", "expansive", "rocky", "waterlogged"}:
+        errors["soil_condition"] = "Invalid soil condition selection."
+
+    drainage_type = payload.get("drainage_type")
+    if drainage_type and drainage_type not in {"mains_sewer", "septic_tank", "soakpit", "none"}:
+        errors["drainage_type"] = "Invalid drainage type selection."
+
+    external_works_scope = payload.get("external_works_scope")
+    if external_works_scope and external_works_scope not in {"none", "minimal", "standard", "extensive"}:
+        errors["external_works_scope"] = "Invalid external works scope selection."
 
     if building_type == "residential":
         bedrooms = payload.get("bedrooms")
