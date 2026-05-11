@@ -1,6 +1,8 @@
 import { auth } from "@/auth";
 import { redirect } from "next/navigation";
-import { Sidebar } from "@/components/layout/Sidebar";
+import { AppSidebar } from "@/components/layout/Sidebar";
+import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+import { Toaster } from "@/components/ui/sonner";
 
 export default async function DashboardLayout({
   children,
@@ -14,14 +16,16 @@ export default async function DashboardLayout({
   }
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex">
-      {/* Sidebar - fixed left */}
-      <Sidebar user={session.user} />
-      
-      {/* Main Content - offset by sidebar width */}
-      <main className="flex-1 ml-64 min-h-screen">
-        {children}
-      </main>
+    <div className="dark">
+      <SidebarProvider>
+        <AppSidebar user={session.user} />
+        <SidebarInset className="bg-background text-foreground">
+          <main className="min-h-screen bg-background pt-15">
+            {children}
+          </main>
+        </SidebarInset>
+        <Toaster richColors position="top-right" />
+      </SidebarProvider>
     </div>
   );
 }

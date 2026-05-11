@@ -5,11 +5,8 @@ Request schemas are imported from app.api.schemas.form_schemas.
 """
 import asyncio
 import json
+import threading
 from typing import Any
-
-# Holds strong references to background pipeline tasks so the GC cannot
-# collect them before they finish.  Each task removes itself on completion.
-_background_tasks: set[asyncio.Task] = set()
 
 from fastapi import Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -18,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.api.schemas.form_schemas import WizardFormPayload, WizardValidateRequest
 from app.api.services.form_service import FormService
 from app.api.state.session import process_store
+from app.api.state.run_registry import run_registry
 from app.api.middleware.auth_dependency import get_current_user_id
 from infrastructure.data_layer.database.session import get_db_session
 from infrastructure.data_layer.database.models.estimate import Estimate
@@ -69,12 +67,13 @@ async def submit_form(
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid user token.")
 
-    # Create persisted Estimate record immediately
+    # Create persisted Estimate record immediately, storing raw wizard payload.
     estimate_record = Estimate(
         user_id=uid,
         project_name=description,
         status="in_progress",
         project_info=project_info,
+        wizard_payload=raw,
     )
     db.add(estimate_record)
     db.commit()
@@ -89,15 +88,20 @@ async def submit_form(
         session_type="form",
     )
 
-    # Fire pipeline in background — keep a strong reference so GC cannot
-    # collect the task before it completes.
+    # Create a cancel event for this run so it can be stopped later.
+    cancel_event = threading.Event()
+
+    # Fire pipeline in background and register in the run registry.
     task = asyncio.create_task(
         FormService.run_pipeline_and_complete(
-            session, project_info, payload.floorplan_urls, estimate_id
+            session,
+            project_info,
+            payload.floorplan_urls,
+            estimate_id,
+            cancel_event=cancel_event,
         )
     )
-    _background_tasks.add(task)
-    task.add_done_callback(_background_tasks.discard)
+    run_registry.register(estimate_id, task, cancel_event, session.session_id)
 
     return {
         "session_id": session.session_id,
@@ -121,7 +125,7 @@ async def stream_form_estimation(session_id: str):
                     yield ": keepalive\n\n"
                     continue
                 yield _format_sse(event["event"], event["data"])
-                if event["event"] in {"completed", "error"}:
+                if event["event"] in {"completed", "error", "cancelled"}:
                     break
         except GeneratorExit:
             pass

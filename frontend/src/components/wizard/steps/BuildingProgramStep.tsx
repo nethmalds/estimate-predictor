@@ -9,15 +9,15 @@ interface Props {
   errors: Record<string, string>;
 }
 
-const inputClass = "w-full bg-zinc-800 border border-zinc-700 text-zinc-100 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500";
+const inputClass = "w-full bg-background border border-input text-foreground rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring";
 const selectClass = inputClass;
-const labelClass = "block text-sm font-medium text-zinc-300 mb-2";
+const labelClass = "block text-sm font-medium text-foreground mb-2";
 
 export function BuildingProgramStep({ data, buildingType, onChange, errors }: Props) {
   if (buildingType === "residential") {
     return (
       <div className="space-y-6">
-        <p className="text-sm text-zinc-400">Provide room counts for the residential building.</p>
+        <p className="text-sm text-muted-foreground">Provide room counts for the residential building.</p>
         <div className="grid grid-cols-2 gap-6">
           <div>
             <label className={labelClass}>Bedrooms <span className="text-red-400">*</span></label>
@@ -28,7 +28,7 @@ export function BuildingProgramStep({ data, buildingType, onChange, errors }: Pr
               placeholder="e.g. 3"
               className={`${inputClass} ${errors.bedrooms ? "border-red-500" : ""}`}
             />
-            {errors.bedrooms && <p className="mt-1 text-xs text-red-400">{errors.bedrooms}</p>}
+            {errors.bedrooms && <p className="mt-1 text-xs text-destructive">{errors.bedrooms}</p>}
           </div>
           <div>
             <label className={labelClass}>Bathrooms <span className="text-red-400">*</span></label>
@@ -39,7 +39,7 @@ export function BuildingProgramStep({ data, buildingType, onChange, errors }: Pr
               placeholder="e.g. 2"
               className={`${inputClass} ${errors.bathrooms ? "border-red-500" : ""}`}
             />
-            {errors.bathrooms && <p className="mt-1 text-xs text-red-400">{errors.bathrooms}</p>}
+            {errors.bathrooms && <p className="mt-1 text-xs text-destructive">{errors.bathrooms}</p>}
           </div>
         </div>
       </div>
@@ -49,7 +49,7 @@ export function BuildingProgramStep({ data, buildingType, onChange, errors }: Pr
   if (buildingType === "commercial") {
     return (
       <div className="space-y-6">
-        <p className="text-sm text-zinc-400">Describe the commercial building program.</p>
+        <p className="text-sm text-muted-foreground">Describe the commercial building program.</p>
         <div>
           <label className={labelClass}>Primary Use Type</label>
           <select
@@ -79,7 +79,7 @@ export function BuildingProgramStep({ data, buildingType, onChange, errors }: Pr
             className={`${inputClass} ${errors.washroom_count ? "border-red-500" : ""}`}
           />
           {errors.washroom_count && (
-            <p className="text-xs text-red-400 mt-1">{errors.washroom_count}</p>
+            <p className="text-xs text-destructive mt-1">{errors.washroom_count}</p>
           )}
         </div>
       </div>
@@ -89,7 +89,7 @@ export function BuildingProgramStep({ data, buildingType, onChange, errors }: Pr
   if (buildingType === "industrial") {
     return (
       <div className="space-y-6">
-        <p className="text-sm text-zinc-400">Describe the industrial facility and its specific requirements.</p>
+        <p className="text-sm text-muted-foreground">Describe the industrial facility and its specific requirements.</p>
         
         <div className="grid grid-cols-2 gap-6">
           <div>

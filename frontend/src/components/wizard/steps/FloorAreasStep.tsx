@@ -44,13 +44,13 @@ export function FloorAreasStep({ data, floorCount, onChange, errors }: Props) {
 
   return (
     <div className="space-y-6">
-      <p className="text-sm text-zinc-400">Enter the built-up area for each floor of the building.</p>
+      <p className="text-sm text-muted-foreground">Enter the built-up area for each floor of the building.</p>
 
       <div className="space-y-3">
         {data.floor_areas.map((row, i) => (
           <div key={i} className="flex items-center gap-3">
-            <span className="w-36 text-sm text-zinc-300 shrink-0">
-              {row.floor_label} <span className="text-red-400">*</span>
+            <span className="w-36 text-sm text-foreground shrink-0">
+              {row.floor_label} <span className="text-destructive">*</span>
             </span>
             <input
               type="number"
@@ -58,20 +58,20 @@ export function FloorAreasStep({ data, floorCount, onChange, errors }: Props) {
               value={row.area_value}
               onChange={(e) => updateRow(i, { area_value: e.target.value === "" ? "" : parseFloat(e.target.value) })}
               placeholder="Area"
-              className={`w-32 bg-zinc-800 border rounded-lg px-3 py-2 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                errors[`floor_areas[${i}]`] ? "border-red-500" : "border-zinc-700"
+              className={`w-32 bg-background border rounded-lg px-3 py-2 text-foreground focus:outline-none focus:ring-2 focus:ring-ring ${
+                errors[`floor_areas[${i}]`] ? "border-destructive" : "border-input"
               }`}
             />
             <select
               value={row.area_unit}
               onChange={(e) => updateRow(i, { area_unit: e.target.value as AreaUnit })}
-              className="bg-zinc-800 border border-zinc-700 text-zinc-100 rounded-lg px-2 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="bg-background border border-input text-foreground rounded-lg px-2 py-2 focus:outline-none focus:ring-2 focus:ring-ring"
             >
               <option value="sqft">sq ft</option>
               <option value="m2">m²</option>
             </select>
             {errors[`floor_areas[${i}]`] && (
-              <span className="text-xs text-red-400">{errors[`floor_areas[${i}]`]}</span>
+              <span className="text-xs text-destructive">{errors[`floor_areas[${i}]`]}</span>
             )}
           </div>
         ))}
@@ -79,16 +79,16 @@ export function FloorAreasStep({ data, floorCount, onChange, errors }: Props) {
 
       {/* Live total */}
       {totalSqft > 0 && (
-        <div className="p-3 bg-zinc-800 border border-zinc-700 rounded-lg">
-          <p className="text-sm text-zinc-300">
+        <div className="p-3 bg-muted/50 border border-border rounded-lg">
+          <p className="text-sm text-foreground">
             Total Built-Up Area:{" "}
-            <span className="font-semibold text-zinc-100">{totalSqft.toFixed(0)} sq ft</span>
-            <span className="text-zinc-400 ml-2">({totalM2.toFixed(1)} m²)</span>
+            <span className="font-semibold">{totalSqft.toFixed(0)} sq ft</span>
+            <span className="text-muted-foreground ml-2">({totalM2.toFixed(1)} m²)</span>
           </p>
         </div>
       )}
       {errors.floor_areas && (
-        <p className="text-xs text-red-400">{errors.floor_areas}</p>
+        <p className="text-xs text-destructive">{errors.floor_areas}</p>
       )}
     </div>
   );

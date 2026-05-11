@@ -1,4 +1,4 @@
-"""SQLAlchemy Estimate model (NEW-DASH-13)."""
+"""SQLAlchemy Estimate model."""
 from __future__ import annotations
 
 import uuid
@@ -28,8 +28,33 @@ class Estimate(Base):
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(
         String(50), nullable=False, default="in_progress"
-    )  # in_progress | completed | failed
+    )  # in_progress | completed | failed | cancelled
+
+    # Raw wizard form input — used to power the project specification panel and regenerate.
+    wizard_payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+    # Normalised pipeline input.
     project_info: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+    # Live progress snapshot updated on every pipeline stage callback.
+    progress: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+    # Human-readable failure reason surfaced to the UI.
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Regeneration lineage — set when this estimate was created by regenerating another.
+    regenerated_from_estimate_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("estimates.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    # Timestamp set when the run was cancelled by the user.
+    cancelled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     result: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     grand_total: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -43,3 +68,9 @@ class Estimate(Base):
     )
 
     user: Mapped["User"] = relationship("User", back_populates="estimates")
+    source_estimate: Mapped["Estimate | None"] = relationship(
+        "Estimate",
+        foreign_keys=[regenerated_from_estimate_id],
+        remote_side=[id],
+        uselist=False,
+    )

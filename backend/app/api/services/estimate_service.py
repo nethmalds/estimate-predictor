@@ -71,6 +71,14 @@ class EstimateService:
             "built_up_area": params.get("built_up_area"),
             "floorplan_accepted": floorplan.get("accepted"),
             "external_works_total": costs.get("external_works_total"),
+            # Lifecycle fields for list view
+            "progress": est.progress,
+            "error_message": est.error_message,
+            "cancelled_at": est.cancelled_at,
+            "regenerated_from_estimate_id": (
+                str(est.regenerated_from_estimate_id)
+                if est.regenerated_from_estimate_id else None
+            ),
         }
 
     # ── Business operations ───────────────────────────────────────────────────
@@ -99,6 +107,15 @@ class EstimateService:
             "item_count": est.item_count,
             "created_at": est.created_at,
             "updated_at": est.updated_at,
+            # Lifecycle fields
+            "progress": est.progress,
+            "error_message": est.error_message,
+            "cancelled_at": est.cancelled_at,
+            "regenerated_from_estimate_id": (
+                str(est.regenerated_from_estimate_id)
+                if est.regenerated_from_estimate_id else None
+            ),
+            "wizard_payload": est.wizard_payload,
         }
 
     def patch_estimate(
@@ -129,6 +146,90 @@ class EstimateService:
             "id": str(new_est.id),
             "project_name": new_est.project_name,
             "status": new_est.status,
+        }
+
+    def cancel_estimate(self, estimate_id: str, user_id: str) -> dict:
+        """Signal a running estimate to stop and mark it as cancelled in DB."""
+        from app.api.state.run_registry import run_registry
+
+        est = self._require_estimate(estimate_id, user_id)
+
+        if est.status != "in_progress":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Estimate is not in progress (current status: {est.status}).",
+            )
+
+        # Signal the background runner — DB update will happen in the runner's
+        # finally block, but we also update here as a fallback if the runner has
+        # already exited.
+        signalled = run_registry.signal_cancel(estimate_id)
+        if not signalled:
+            # Runner already finished — just update the DB directly.
+            updated = self._repo.mark_cancelled(est)
+        else:
+            updated = est  # DB will be updated by the runner
+
+        return {
+            "id": str(updated.id),
+            "status": updated.status,
+            "cancelled_at": updated.cancelled_at,
+        }
+
+    async def regenerate_estimate(self, estimate_id: str, user_id: str) -> dict:
+        """Create a new estimate from the same wizard payload and start the pipeline."""
+        import asyncio
+        import threading
+
+        from app.api.services.form_service import FormService
+        from app.api.state.run_registry import run_registry
+        from app.api.state.session import process_store
+
+        est = self._require_estimate(estimate_id, user_id)
+
+        if not est.wizard_payload:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Cannot regenerate: original estimate has no stored wizard payload.",
+            )
+
+        uid = self._parse_uuid(user_id, "user ID")
+        # Attempt count: count existing regenerations to produce a human title.
+        new_name = f"Re-run of {est.project_name or 'Unnamed'}"
+
+        new_est = self._repo.create_regenerated(est, uid, new_name)
+        new_id = str(new_est.id)
+
+        project_info = new_est.project_info or {}
+        floorplan_urls: list[str] = new_est.wizard_payload.get("floorplan_urls") or []
+
+        cancel_event = threading.Event()
+
+        session = await process_store.create_session(
+            description=new_name,
+            floorplan_urls=floorplan_urls,
+            project_info=project_info,
+            session_type="form",
+        )
+        task = asyncio.create_task(
+            FormService.run_pipeline_and_complete(
+                session,
+                project_info,
+                floorplan_urls,
+                new_id,
+                cancel_event=cancel_event,
+            )
+        )
+        run_registry.register(new_id, task, cancel_event, session.session_id)
+        session_id = session.session_id
+
+        return {
+            "id": new_id,
+            "status": "in_progress",
+            "project_name": new_name,
+            "created_at": new_est.created_at,
+            "regenerated_from_estimate_id": estimate_id,
+            "session_id": session_id,
         }
 
     def get_dashboard_summary(self, user_id: str) -> dict:

@@ -100,8 +100,8 @@ class DatabaseSettings:
 	retrieval_top_k: int = field(default_factory=lambda: _required_int("RETRIEVAL_TOP_K"))
 	min_confidence_threshold: float = field(default_factory=lambda: _required_float("MIN_CONFIDENCE_THRESHOLD"))
 
-	openrouter_api_key: str | None = field(default_factory=lambda: _optional_env("OPENROUTER_API_KEY"))
-	openrouter_model: str | None = field(default_factory=lambda: _optional_env("OPENROUTER_MODEL"))
+	ollama_api_key: str | None = field(default_factory=lambda: _optional_env("OLLAMA_API_KEY"))
+	ollama_model: str | None = field(default_factory=lambda: _optional_env("OLLAMA_MODEL"))
 
 	cors_allow_origins: list[str] = field(default_factory=_cors_allow_origins)
 

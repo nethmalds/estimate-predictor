@@ -1,4 +1,4 @@
-"""Pydantic schemas for estimate endpoints (NEW-DASH-13 to 16)."""
+"""Pydantic schemas for estimate endpoints."""
 from __future__ import annotations
 
 import uuid
@@ -20,6 +20,11 @@ class EstimateListItem(BaseModel):
     building_type: str | None = None
     floors: int | None = None
     built_up_area: str | None = None
+    # Lifecycle fields exposed in list view
+    progress: dict | None = None
+    error_message: str | None = None
+    cancelled_at: datetime | None = None
+    regenerated_from_estimate_id: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -36,6 +41,12 @@ class EstimateDetail(BaseModel):
     item_count: int | None
     created_at: datetime
     updated_at: datetime
+    # Lifecycle fields
+    progress: dict | None = None
+    error_message: str | None = None
+    cancelled_at: datetime | None = None
+    regenerated_from_estimate_id: str | None = None
+    wizard_payload: dict | None = None
 
     model_config = {"from_attributes": True}
 
@@ -57,3 +68,17 @@ class DashboardSummary(BaseModel):
     estimates_this_month: int
     average_confidence: float | None
     total_estimated_value: float
+
+
+class CancelEstimateResponse(BaseModel):
+    id: str
+    status: str
+    cancelled_at: datetime | None = None
+
+
+class RegenerateEstimateResponse(BaseModel):
+    id: str
+    status: str
+    project_name: str | None
+    created_at: datetime
+    regenerated_from_estimate_id: str | None = None

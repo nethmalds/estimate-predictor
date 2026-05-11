@@ -64,6 +64,24 @@ async def duplicate_estimate(
     return EstimateService(db).duplicate_estimate(estimate_id, user_id)
 
 
+async def cancel_estimate(
+    estimate_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db_session),
+) -> dict:
+    """POST /api/estimates/{id}/cancel"""
+    return EstimateService(db).cancel_estimate(estimate_id, user_id)
+
+
+async def regenerate_estimate(
+    estimate_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db_session),
+) -> dict:
+    """POST /api/estimates/{id}/regenerate"""
+    return await EstimateService(db).regenerate_estimate(estimate_id, user_id)
+
+
 async def get_dashboard_summary(
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db_session),

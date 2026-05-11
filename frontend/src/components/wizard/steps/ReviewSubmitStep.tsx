@@ -18,11 +18,11 @@ const BUILDING_TYPE_LABELS: Record<string, string> = {
 function SectionHeader({ title, step, onEdit }: { title: string; step: WizardStepId; onEdit: (s: WizardStepId) => void }) {
   return (
     <div className="flex items-center justify-between mb-3">
-      <h3 className="text-sm font-semibold text-zinc-200">{title}</h3>
+      <h3 className="text-sm font-semibold text-foreground">{title}</h3>
       <button
         type="button"
         onClick={() => onEdit(step)}
-        className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors"
+        className="flex items-center gap-1 text-xs text-blue-500 hover:text-blue-600 transition-colors"
       >
         <Edit2 className="w-3 h-3" /> Edit
       </button>
@@ -33,9 +33,9 @@ function SectionHeader({ title, step, onEdit }: { title: string; step: WizardSte
 function ReviewRow({ label, value }: { label: string; value: string | number | null | undefined }) {
   if (!value && value !== 0) return null;
   return (
-    <div className="flex justify-between py-1.5 border-b border-zinc-800 last:border-0">
-      <span className="text-xs text-zinc-400">{label}</span>
-      <span className="text-xs text-zinc-200 font-medium">{String(value)}</span>
+    <div className="flex justify-between py-1.5 border-b border-border last:border-0">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <span className="text-xs text-foreground font-medium">{String(value)}</span>
     </div>
   );
 }
@@ -52,11 +52,11 @@ export function ReviewSubmitStep({ data, onEditStep, isSubmitting, error }: Prop
   return (
     <div className="space-y-6">
       {error && (
-        <div className="p-3 bg-red-900/30 border border-red-700 rounded-lg text-red-300 text-sm">{error}</div>
+        <div className="p-3 bg-destructive/10 border border-destructive/30 rounded-lg text-destructive text-sm">{error}</div>
       )}
 
       {/* Project Basics */}
-      <div className="bg-zinc-800/50 border border-zinc-700 rounded-lg p-4">
+      <div className="bg-muted/50 border border-border rounded-lg p-4">
         <SectionHeader title="Project Basics" step={1} onEdit={onEditStep} />
         <ReviewRow label="Building Type" value={BUILDING_TYPE_LABELS[String(projectBasics.building_type)] || String(projectBasics.building_type)} />
         <ReviewRow label="Number of Floors" value={projectBasics.floor_count} />
@@ -64,18 +64,18 @@ export function ReviewSubmitStep({ data, onEditStep, isSubmitting, error }: Prop
       </div>
 
       {/* Floor Areas */}
-      <div className="bg-zinc-800/50 border border-zinc-700 rounded-lg p-4">
+      <div className="bg-muted/50 border border-border rounded-lg p-4">
         <SectionHeader title="Floor Areas" step={2} onEdit={onEditStep} />
         {floorAreas.floor_areas.map((row, i) => (
           <ReviewRow key={i} label={row.floor_label} value={`${row.area_value} ${row.area_unit}`} />
         ))}
-        <div className="mt-2 pt-2 border-t border-zinc-700">
+        <div className="mt-2 pt-2 border-t border-border">
           <ReviewRow label="Total Built-Up Area" value={`${totalSqft.toFixed(0)} sqft (${(totalSqft * 0.0929).toFixed(1)} m²)`} />
         </div>
       </div>
 
       {/* Building Program */}
-      <div className="bg-zinc-800/50 border border-zinc-700 rounded-lg p-4">
+      <div className="bg-muted/50 border border-border rounded-lg p-4">
         <SectionHeader title="Building Program" step={3} onEdit={onEditStep} />
         {projectBasics.building_type === "residential" && (
           <>
@@ -100,7 +100,7 @@ export function ReviewSubmitStep({ data, onEditStep, isSubmitting, error }: Prop
       </div>
 
       {/* Construction Details */}
-      <div className="bg-zinc-800/50 border border-zinc-700 rounded-lg p-4">
+      <div className="bg-muted/50 border border-border rounded-lg p-4">
         <SectionHeader title="Construction Details" step={4} onEdit={onEditStep} />
         <ReviewRow label="Finish Level" value={constructionDetails.finish_level} />
         <ReviewRow label="Structural System" value={constructionDetails.structural_system} />
@@ -114,7 +114,7 @@ export function ReviewSubmitStep({ data, onEditStep, isSubmitting, error }: Prop
 
 
       {isSubmitting && (
-        <div className="text-center text-zinc-400 text-sm py-4">
+        <div className="text-center text-muted-foreground text-sm py-4">
           Submitting and starting estimation...
         </div>
       )}

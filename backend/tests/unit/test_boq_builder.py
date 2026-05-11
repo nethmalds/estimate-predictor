@@ -19,7 +19,7 @@ if str(_BACKEND_ROOT) not in sys.path:
 
 # ---------------------------------------------------------------------------
 # Stub out heavy / unavailable transitive dependencies before importing
-# boq_builder (which imports llm_client → openrouter_client → openai).
+# boq_builder (which imports llm_client → ollama_client).
 # ---------------------------------------------------------------------------
 def _make_stub(name: str) -> ModuleType:
     mod = ModuleType(name)
@@ -31,9 +31,9 @@ for _name in ("openai", "openai.types", "openai.types.chat"):
         sys.modules[_name] = _make_stub(_name)
 
 # Stub the chat function used by llm_client
-_oc_stub = _make_stub("infrastructure.integrations.openrouter_client")
+_oc_stub = _make_stub("infrastructure.integrations.ollama_client")
 _oc_stub.chat = MagicMock(return_value="{}")  # type: ignore[attr-defined]
-sys.modules.setdefault("infrastructure.integrations.openrouter_client", _oc_stub)
+sys.modules.setdefault("infrastructure.integrations.ollama_client", _oc_stub)
 
 # Stub joblib / sklearn so item_predictor can be imported too
 for _name in ("joblib", "sklearn", "sklearn.ensemble", "numpy", "numpy.core"):

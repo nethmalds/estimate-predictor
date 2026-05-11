@@ -179,8 +179,8 @@ export function ProjectBasicsStep({ data, onChange, errors }: Props) {
     <div className="space-y-8">
       {/* Building Type */}
       <div>
-        <label className="block text-sm font-medium text-zinc-300 mb-3">
-          Building Type <span className="text-red-400">*</span>
+        <label className="block text-sm font-medium text-foreground mb-3">
+          Building Type <span className="text-destructive">*</span>
         </label>
         <div className="grid grid-cols-2 gap-3">
           {BUILDING_TYPES.map((bt) => (
@@ -188,31 +188,31 @@ export function ProjectBasicsStep({ data, onChange, errors }: Props) {
               key={bt.value}
               type="button"
               onClick={() => onChange({ ...data, building_type: bt.value })}
-              className={`flex items-start gap-3 p-4 rounded-lg border text-left transition-colors ${
+              className={`flex items-start gap-3 p-4 rounded-lg border text-left transition-all ${
                 data.building_type === bt.value
-                  ? "border-blue-500 bg-blue-600/10 text-zinc-100"
-                  : "border-zinc-700 bg-zinc-800 text-zinc-300 hover:border-zinc-500"
+                  ? "border-blue-500 bg-blue-50 text-foreground shadow-sm"
+                  : "border-border bg-card text-foreground hover:border-primary/40 hover:bg-accent/30"
               }`}
             >
-              <span className={data.building_type === bt.value ? "text-blue-400" : "text-zinc-400"}>
+              <span className={data.building_type === bt.value ? "text-blue-500" : "text-muted-foreground"}>
                 {bt.icon}
               </span>
               <div>
                 <div className="font-medium text-sm">{bt.label}</div>
-                <div className="text-xs text-zinc-400 mt-0.5">{bt.description}</div>
+                <div className="text-xs text-muted-foreground mt-0.5">{bt.description}</div>
               </div>
             </button>
           ))}
         </div>
         {errors.building_type && (
-          <p className="mt-1 text-xs text-red-400">{errors.building_type}</p>
+          <p className="mt-1 text-xs text-destructive">{errors.building_type}</p>
         )}
       </div>
 
       {/* Floor Count */}
       <div>
-        <label className="block text-sm font-medium text-zinc-300 mb-2">
-          Number of Floors <span className="text-red-400">*</span>
+        <label className="block text-sm font-medium text-foreground mb-2">
+          Number of Floors <span className="text-destructive">*</span>
         </label>
         <input
           type="number"
@@ -221,32 +221,32 @@ export function ProjectBasicsStep({ data, onChange, errors }: Props) {
           value={data.floor_count}
           onChange={(e) => onChange({ ...data, floor_count: e.target.value === "" ? "" : parseInt(e.target.value) })}
           placeholder="e.g. 2"
-          className="w-32 bg-zinc-800 border border-zinc-700 text-zinc-100 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-32 bg-background border border-input text-foreground rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring"
         />
         {errors.floor_count && (
-          <p className="mt-1 text-xs text-red-400">{errors.floor_count}</p>
+          <p className="mt-1 text-xs text-destructive">{errors.floor_count}</p>
         )}
       </div>
 
       {/* Description */}
       <div>
-        <label className="block text-sm font-medium text-zinc-300 mb-2">
-          Project Description <span className="text-zinc-500 text-xs">(optional)</span>
+        <label className="block text-sm font-medium text-foreground mb-2">
+          Project Description <span className="text-muted-foreground text-xs">(optional)</span>
         </label>
         <textarea
           value={data.description}
           onChange={(e) => onChange({ ...data, description: e.target.value })}
           placeholder="Brief description of the project..."
           rows={3}
-          className="w-full bg-zinc-800 border border-zinc-700 text-zinc-100 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none placeholder:text-zinc-500"
+          className="w-full bg-background border border-input text-foreground rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring resize-none placeholder:text-muted-foreground"
         />
       </div>
 
       {/* Floorplan Upload — drag-and-drop multi-file */}
       <div>
-        <label className="block text-sm font-medium text-zinc-300 mb-2">
+        <label className="block text-sm font-medium text-foreground mb-2">
           Floor Plan Documents{" "}
-          <span className="text-zinc-500 text-xs">(optional · images &amp; PDFs · up to 10)</span>
+          <span className="text-muted-foreground text-xs">(optional · images &amp; PDFs · up to 10)</span>
         </label>
 
         {/* Drop Zone */}
@@ -258,7 +258,7 @@ export function ProjectBasicsStep({ data, onChange, errors }: Props) {
           className={`relative flex flex-col items-center justify-center gap-2 p-6 rounded-xl border-2 border-dashed cursor-pointer transition-all select-none ${
             isDragging
               ? "border-blue-400 bg-blue-500/10 scale-[1.01]"
-              : "border-zinc-600 bg-zinc-800/60 hover:border-zinc-400 hover:bg-zinc-800"
+              : "border-border bg-muted/30 hover:border-primary/40 hover:bg-muted/50"
           }`}
         >
           <input
@@ -270,12 +270,12 @@ export function ProjectBasicsStep({ data, onChange, errors }: Props) {
             className="hidden"
           />
           <UploadCloud
-            className={`w-8 h-8 transition-colors ${isDragging ? "text-blue-400" : "text-zinc-500"}`}
+            className={`w-8 h-8 transition-colors ${isDragging ? "text-blue-400" : "text-muted-foreground"}`}
           />
-          <p className="text-sm font-medium text-zinc-300">
+          <p className="text-sm font-medium text-foreground">
             {isDragging ? "Drop files here" : "Drag & drop files, or click to browse"}
           </p>
-          <p className="text-xs text-zinc-500">Supports PNG, JPG, WEBP, PDF — max 8 MB each</p>
+          <p className="text-xs text-muted-foreground">Supports PNG, JPG, WEBP, PDF — max 8 MB each</p>
         </div>
 
         {/* File List */}
@@ -284,7 +284,7 @@ export function ProjectBasicsStep({ data, onChange, errors }: Props) {
             {fileEntries.map((entry) => (
               <li
                 key={entry.id}
-                className="flex items-center gap-3 p-3 bg-zinc-800 border border-zinc-700 rounded-lg"
+                className="flex items-center gap-3 p-3 bg-muted/50 border border-border rounded-lg"
               >
                 {/* Thumbnail or PDF icon */}
                 {entry.previewUrl ? (
@@ -292,26 +292,26 @@ export function ProjectBasicsStep({ data, onChange, errors }: Props) {
                   <img
                     src={entry.previewUrl}
                     alt={entry.file.name}
-                    className="w-10 h-10 object-cover rounded-md shrink-0 border border-zinc-700"
+                    className="w-10 h-10 object-cover rounded-md shrink-0 border border-border"
                   />
                 ) : (
-                  <div className="w-10 h-10 flex items-center justify-center rounded-md bg-zinc-700 shrink-0 border border-zinc-600">
-                    <FileText className="w-5 h-5 text-zinc-400" />
+                  <div className="w-10 h-10 flex items-center justify-center rounded-md bg-muted shrink-0 border border-border">
+                    <FileText className="w-5 h-5 text-muted-foreground" />
                   </div>
                 )}
 
                 {/* Info */}
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm text-zinc-200 truncate font-medium">{entry.file.name}</p>
+                  <p className="text-sm text-foreground truncate font-medium">{entry.file.name}</p>
                   <div className="flex items-center gap-2 mt-0.5">
-                    <span className="text-xs text-zinc-500">{fileSizeLabel(entry.file.size)}</span>
+                    <span className="text-xs text-muted-foreground">{fileSizeLabel(entry.file.size)}</span>
                     {entry.status === "uploading" && (
-                      <span className="flex items-center gap-1 text-xs text-blue-400">
+                      <span className="flex items-center gap-1 text-xs text-blue-500">
                         <Loader2 className="w-3 h-3 animate-spin" /> Uploading…
                       </span>
                     )}
                     {entry.status === "done" && (
-                      <span className="flex items-center gap-1 text-xs text-emerald-400">
+                      <span className="flex items-center gap-1 text-xs text-emerald-500">
                         <CheckCircle2 className="w-3 h-3" /> Uploaded
                       </span>
                     )}
@@ -319,13 +319,13 @@ export function ProjectBasicsStep({ data, onChange, errors }: Props) {
                       <button
                         type="button"
                         onClick={(e) => { e.stopPropagation(); retryFile(entry.id); }}
-                        className="flex items-center gap-1 text-xs text-red-400 hover:text-red-300 transition-colors"
+                        className="flex items-center gap-1 text-xs text-destructive hover:text-destructive/80 transition-colors"
                       >
                         <AlertCircle className="w-3 h-3" /> Failed — retry
                       </button>
                     )}
                     {entry.status === "pending" && (
-                      <span className="text-xs text-zinc-500">Queued…</span>
+                      <span className="text-xs text-muted-foreground">Queued…</span>
                     )}
                   </div>
                 </div>
@@ -333,9 +333,9 @@ export function ProjectBasicsStep({ data, onChange, errors }: Props) {
                 {/* File type badge */}
                 <div className="shrink-0">
                   {isImage(entry.file) ? (
-                    <ImageIcon className="w-4 h-4 text-zinc-500" />
+                    <ImageIcon className="w-4 h-4 text-muted-foreground" />
                   ) : (
-                    <FileText className="w-4 h-4 text-zinc-500" />
+                    <FileText className="w-4 h-4 text-muted-foreground" />
                   )}
                 </div>
 
@@ -343,7 +343,7 @@ export function ProjectBasicsStep({ data, onChange, errors }: Props) {
                 <button
                   type="button"
                   onClick={(e) => { e.stopPropagation(); removeFile(entry.id); }}
-                  className="shrink-0 p-1 rounded-md text-zinc-500 hover:text-red-400 hover:bg-red-400/10 transition-colors"
+                  className="shrink-0 p-1 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
                   title="Remove file"
                 >
                   <X className="w-4 h-4" />
