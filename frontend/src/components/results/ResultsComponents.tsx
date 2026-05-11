@@ -260,18 +260,22 @@ function FullBoqTable({ items, grandTotal }: FullBoqTableProps) {
                     <TableCell className="text-muted-foreground text-xs">
                       {(page - 1) * PAGE_SIZE + i + 1}
                     </TableCell>
-                    <TableCell className="text-muted-foreground text-xs whitespace-nowrap">
-                      {(item.section ?? item.category ?? "—").replace(/_/g, " ").slice(0, 28)}
+                    <TableCell className="text-muted-foreground text-xs">
+                      {(item.section ?? item.category ?? "—").replace(/_/g, " ")}
                     </TableCell>
                     <TableCell className="max-w-xs text-xs">
-                      <span className="flex items-start gap-1">
+                      <div className="flex items-start gap-1">
                         {(isNoMatch || needsReview) && (
                           <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0 text-yellow-400" />
                         )}
-                        {item.description ?? item.bsr_description ?? "—"}
-                      </span>
+                        <span className="whitespace-normal break-words">
+                          {item.description ?? item.bsr_description ?? "—"}
+                        </span>
+                      </div>
                       {item.bsr_item_no && (
-                        <span className="text-muted-foreground/60 text-[10px]">{item.bsr_item_no}</span>
+                        <div className="text-muted-foreground/60 text-[10px] mt-0.5 whitespace-normal break-words">
+                          {item.bsr_item_no}
+                        </div>
                       )}
                     </TableCell>
                     <TableCell className="text-right text-xs">{item.unit ?? "—"}</TableCell>
