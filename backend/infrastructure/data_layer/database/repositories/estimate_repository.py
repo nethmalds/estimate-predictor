@@ -74,17 +74,52 @@ class EstimateRepository:
         project_name: str,
         status: str = "in_progress",
         project_info: dict | None = None,
+        wizard_payload: dict | None = None,
     ) -> Estimate:
         estimate = Estimate(
             user_id=user_id,
             project_name=project_name,
             status=status,
             project_info=project_info,
+            wizard_payload=wizard_payload,
         )
         self._db.add(estimate)
         self._db.commit()
         self._db.refresh(estimate)
         return estimate
+
+    def update_progress(self, estimate: Estimate, progress_snapshot: dict) -> None:
+        """Persist a live progress snapshot to the estimate row."""
+        estimate.progress = progress_snapshot
+        self._db.commit()
+
+    def mark_cancelled(self, estimate: Estimate) -> Estimate:
+        """Mark an estimate as cancelled and record the timestamp."""
+        estimate.status = "cancelled"
+        estimate.cancelled_at = datetime.now(timezone.utc)
+        self._db.commit()
+        self._db.refresh(estimate)
+        return estimate
+
+    def create_regenerated(
+        self,
+        source_estimate: Estimate,
+        user_id: uuid.UUID,
+        new_name: str,
+    ) -> Estimate:
+        """Create a new estimate seeded from source_estimate's wizard_payload."""
+        new_est = Estimate(
+            user_id=user_id,
+            project_name=new_name,
+            status="in_progress",
+            project_info=source_estimate.project_info,
+            wizard_payload=source_estimate.wizard_payload,
+            regenerated_from_estimate_id=source_estimate.id,
+        )
+        self._db.add(new_est)
+        self._db.commit()
+        self._db.refresh(new_est)
+        return new_est
 
     def patch(
         self,
@@ -110,6 +145,7 @@ class EstimateRepository:
             project_name=f"Copy of {estimate.project_name or 'Unnamed'}",
             status="in_progress",
             project_info=estimate.project_info,
+            wizard_payload=estimate.wizard_payload,
         )
         self._db.add(new_est)
         self._db.commit()

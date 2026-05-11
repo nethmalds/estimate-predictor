@@ -1,10 +1,9 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { uploadFiles } from "@/lib/uploadthing";
-import { submitWizardForm, openFormEstimateStream } from "@/services/estimates.service";
+import { submitWizardForm } from "@/services/estimates.service";
 import {
   WizardFormData,
   WizardStepId,
@@ -20,15 +19,9 @@ import { FloorAreasStep } from "@/components/wizard/steps/FloorAreasStep";
 import { BuildingProgramStep } from "@/components/wizard/steps/BuildingProgramStep";
 import { ConstructionDetailsStep } from "@/components/wizard/steps/ConstructionDetailsStep";
 import { ReviewSubmitStep } from "@/components/wizard/steps/ReviewSubmitStep";
-import {
-  CostBreakdownChart,
-  ConfidenceBreakdownCard,
-  FullBoqTable,
-  generateExcelReport,
-  downloadExcelBlob,
-  type BoqItem,
-} from "@/components/results/ResultsComponents";
-import { ChevronLeft, ChevronRight, Loader2, Download } from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2, CheckCircle } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 
 // --- Initial form state ---
 
@@ -97,7 +90,7 @@ function validateStep(step: WizardStepId, form: WizardFormData): Record<string, 
 
 // --- Main component ---
 
-export default function Home() {
+export default function NewEstimatePage() {
   const { data: session } = useSession();
   const router = useRouter();
   const accessToken = (session?.user as { accessToken?: string } | undefined)?.accessToken ?? "";
@@ -107,22 +100,7 @@ export default function Home() {
   const [stepErrors, setStepErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-
-  const [pipelineStep, setPipelineStep] = useState<string | null>(null);
-  const [isEstimating, setIsEstimating] = useState(false);
-
-  const [estimateResult, setEstimateResult] = useState<Record<string, unknown> | null>(null);
-  const [excelUrl, setExcelUrl] = useState<string | null>(null);
-  const [uploadFailed, setUploadFailed] = useState(false);
-  const [stalledWarning, setStalledWarning] = useState(false);
-
-  const eventSourceRef = useRef<EventSource | null>(null);
-  const stalledTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => () => {
-    eventSourceRef.current?.close();
-    if (stalledTimerRef.current) clearTimeout(stalledTimerRef.current);
-  }, []);
+  const [started, setStarted] = useState(false);
 
   const handleNext = () => {
     const errors = validateStep(currentStep, formData);
@@ -149,168 +127,30 @@ export default function Home() {
     setSubmitError(null);
     try {
       const payload = buildApiPayload(formData);
-      const { session_id, estimate_id } = await submitWizardForm(payload, accessToken || undefined);
+      const { estimate_id } = await submitWizardForm(payload, accessToken || undefined);
 
-      setIsEstimating(true);
-      setIsSubmitting(false);
-
-      const source = openFormEstimateStream(session_id);
-      eventSourceRef.current = source;
-
-      const resetStalledTimer = () => {
-        setStalledWarning(false);
-        if (stalledTimerRef.current) clearTimeout(stalledTimerRef.current);
-        stalledTimerRef.current = setTimeout(() => setStalledWarning(true), 30_000);
-      };
-      resetStalledTimer();
-
-      source.addEventListener("progress", (event) => {
-        const data = JSON.parse((event as MessageEvent).data) as { step: string; status: string };
-        setPipelineStep(data.step + " — " + data.status);
-        resetStalledTimer();
-      });
-
-      source.addEventListener("info", (event) => {
-        const data = JSON.parse((event as MessageEvent).data) as { message: string };
-        setPipelineStep(data.message);
-        resetStalledTimer();
-      });
-
-      source.addEventListener("completed", (event) => {
-        const data = JSON.parse((event as MessageEvent).data) as Record<string, unknown>;
-        source.close();
-        if (stalledTimerRef.current) clearTimeout(stalledTimerRef.current);
-        setIsEstimating(false);
-        setEstimateResult(data);
-
-        // Navigate to the persisted estimate detail page if we have an ID
-        const resolvedEstimateId = (data.estimate_id as string | undefined) ?? estimate_id;
-        if (resolvedEstimateId) {
-          router.push(`/dashboard/estimates/${resolvedEstimateId}`);
-          return;
-        }
-
-        void (async () => {
-          try {
-            const excelBuffer = generateExcelReport(data);
-            const blob = new Blob([excelBuffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-            const fileName = "estimate_" + new Date().toISOString().slice(0, 10) + ".xlsx";
-            const file = new File([blob], fileName, { type: blob.type });
-            const [uploaded] = await uploadFiles("excelUploader", { files: [file] });
-            setExcelUrl(uploaded.ufsUrl);
-          } catch (err) {
-            console.error("Excel upload failed, using Blob URL fallback:", err);
-            setUploadFailed(true);
-          }
-        })();
-      });
-
-      source.addEventListener("error", (event) => {
-        const raw = (event as MessageEvent).data;
-        // Only treat as fatal if the server sent a custom error event with a data payload.
-        // Native EventSource reconnect/network errors have no data and should be ignored.
-        if (!raw) return;
-        if (stalledTimerRef.current) clearTimeout(stalledTimerRef.current);
-        const msg = (JSON.parse(raw) as { message?: string }).message ?? "Estimation failed.";
-        setIsEstimating(false);
-        setSubmitError(msg);
-        source.close();
-      });
-
+      // Estimation is now running in the background on the server.
+      // Immediately navigate to the detail page which shows live progress.
+      setStarted(true);
+      if (estimate_id) {
+        router.push(`/dashboard/estimates/${estimate_id}`);
+      } else {
+        router.push("/dashboard/estimates");
+      }
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : "Submission failed.");
       setIsSubmitting(false);
     }
   };
 
-  if (estimateResult && !isEstimating) {
-    const costs = (estimateResult.costs as Record<string, unknown>) || {};
-    const confidence = (estimateResult.confidence as Record<string, unknown>) || {};
-    const boqItems = (estimateResult.boq_items as BoqItem[]) || [];
-    const subtotals = (costs.subtotals as Record<string, number>) || {};
-    const grandTotal = Number(costs.total ?? 0);
+  // Brief "started" screen shown while router.push is navigating.
+  if (started) {
     return (
-      <div className="min-h-screen bg-zinc-950 text-zinc-100 p-6">
-        <div className="max-w-5xl mx-auto">
-          <h1 className="text-2xl font-bold mb-2">Estimate Complete</h1>
-          <p className="text-zinc-400 mb-8">Your construction cost estimate has been generated.</p>
-
-          <div className="grid grid-cols-3 gap-4 mb-8">
-            <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-4">
-              <p className="text-xs text-zinc-400 mb-1">Grand Total</p>
-              <p className="text-xl font-bold text-zinc-100">LKR {grandTotal.toLocaleString()}</p>
-            </div>
-            <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-4">
-              <p className="text-xs text-zinc-400 mb-1">Confidence Score</p>
-              <p className="text-xl font-bold text-zinc-100">{((Number(confidence.score ?? 0)) * 100).toFixed(1)}%</p>
-            </div>
-            <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-4">
-              <p className="text-xs text-zinc-400 mb-1">BOQ Items</p>
-              <p className="text-xl font-bold text-zinc-100">{boqItems.length}</p>
-            </div>
-          </div>
-
-          {/* Confidence breakdown (NEW-CONF-01) */}
-          {Object.keys(confidence).length > 0 && (
-            <ConfidenceBreakdownCard confidence={confidence} />
-          )}
-
-          {/* Per-category cost breakdown chart (IMP-FE-07) */}
-          {Object.keys(subtotals).length > 0 && (
-            <CostBreakdownChart subtotals={subtotals} />
-          )}
-
-          {/* Full BOQ table with no_match highlight (IMP-FE-01/02) */}
-          {boqItems.length > 0 && (
-            <FullBoqTable items={boqItems} grandTotal={grandTotal} />
-          )}
-
-          <div className="flex gap-3">
-            {/* Download: UploadThing link if available, else direct Blob fallback (IMP-FE-05) */}
-            {excelUrl ? (
-              <a
-                href={excelUrl}
-                download
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
-              >
-                <Download className="w-4 h-4" /> Download Excel Report
-              </a>
-            ) : (
-              <button
-                onClick={() => downloadExcelBlob(estimateResult)}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
-              >
-                <Download className="w-4 h-4" />
-                {uploadFailed ? "Download Excel Report (local)" : "Download Excel Report"}
-              </button>
-            )}
-            <button
-              onClick={() => { setEstimateResult(null); setCurrentStep(1); setFormData(INITIAL_FORM); setExcelUrl(null); setUploadFailed(false); }}
-              className="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 text-zinc-200 rounded-lg text-sm font-medium transition-colors"
-            >
-              New Estimate
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (isEstimating) {
-    return (
-      <div className="min-h-screen bg-zinc-950 text-zinc-100 flex items-center justify-center">
+      <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center max-w-sm">
-          <Loader2 className="w-10 h-10 text-blue-400 animate-spin mx-auto mb-4" />
-          <h2 className="text-lg font-semibold mb-2">Generating Estimate</h2>
-          <p className="text-zinc-400 text-sm mb-4">This usually takes 30-90 seconds.</p>
-          {pipelineStep && (
-            <p className="text-xs text-zinc-500 bg-zinc-800 rounded px-3 py-2">{pipelineStep}</p>
-          )}
-          {stalledWarning && (
-            <p className="text-xs text-yellow-400 bg-yellow-950/30 border border-yellow-800 rounded px-3 py-2 mt-3">
-              ⚠ Taking longer than expected — still processing, please wait...
-            </p>
-          )}
+          <CheckCircle className="w-12 h-12 text-green-400 mx-auto mb-4" />
+          <h2 className="text-lg font-semibold text-zinc-100 mb-2">Estimation Started!</h2>
+          <p className="text-zinc-400 text-sm">Redirecting to your estimate...</p>
         </div>
       </div>
     );
@@ -319,23 +159,23 @@ export default function Home() {
   const floorCount = Number(formData.projectBasics.floor_count) || 1;
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 p-6">
-      <div className="max-w-4xl mx-auto">
-        <div className="mb-8">
-          <h1 className="text-2xl font-bold mb-1">Construction Cost Estimator</h1>
-          <p className="text-zinc-400 text-sm">Complete the form to generate your Bill of Quantities estimate.</p>
-        </div>
+    <div className="relative p-6 max-w-4xl mx-auto space-y-6 overflow-hidden">
+      {/* Ambient glow */}
+      <div className="absolute -top-20 left-1/3 w-[400px] h-[250px] bg-blue-600/10 blur-[100px] rounded-full pointer-events-none -z-10" />
 
-        <WizardProgress steps={WIZARD_STEPS} currentStep={currentStep} />
+      <div>
+        <h1 className="text-2xl font-bold text-zinc-100">Construction Cost Estimator</h1>
+        <p className="text-zinc-400 text-sm mt-1">Complete the form to generate your Bill of Quantities estimate.</p>
+      </div>
 
-        <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 mb-6">
-          <div className="mb-6">
-            <h2 className="text-lg font-semibold text-zinc-100">
-              {WIZARD_STEPS[currentStep - 1].title}
-            </h2>
-            <p className="text-sm text-zinc-400 mt-0.5">{WIZARD_STEPS[currentStep - 1].description}</p>
-          </div>
+      <WizardProgress steps={WIZARD_STEPS} currentStep={currentStep} />
 
+      <Card className="border-border/60 bg-card/80 backdrop-blur-sm">
+        <CardHeader>
+          <CardTitle className="text-zinc-100">{WIZARD_STEPS[currentStep - 1].title}</CardTitle>
+          <CardDescription className="text-zinc-400">{WIZARD_STEPS[currentStep - 1].description}</CardDescription>
+        </CardHeader>
+        <CardContent>
           {currentStep === 1 && (
             <ProjectBasicsStep
               data={formData.projectBasics}
@@ -374,37 +214,25 @@ export default function Home() {
               error={submitError}
             />
           )}
-        </div>
+        </CardContent>
+      </Card>
 
-        <div className="flex items-center justify-between">
-          <button
-            type="button"
-            onClick={handleBack}
-            disabled={currentStep === 1}
-            className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed text-zinc-200 rounded-lg text-sm font-medium transition-colors"
-          >
-            <ChevronLeft className="w-4 h-4" /> Back
-          </button>
+      <div className="flex items-center justify-between">
+        <Button variant="outline" onClick={handleBack} disabled={currentStep === 1}
+          className="border-border/60 text-zinc-300 hover:text-zinc-100">
+          <ChevronLeft /> Back
+        </Button>
 
-          {currentStep < 5 ? (
-            <button
-              type="button"
-              onClick={handleNext}
-              className="flex items-center gap-2 px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
-            >
-              Next <ChevronRight className="w-4 h-4" />
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={handleSubmit}
-              disabled={isSubmitting}
-              className="flex items-center gap-2 px-6 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white rounded-lg text-sm font-medium transition-colors"
-            >
-              {isSubmitting ? <><Loader2 className="w-4 h-4 animate-spin" /> Submitting...</> : "Generate Estimate"}
-            </button>
-          )}
-        </div>
+        {currentStep < 5 ? (
+          <Button onClick={handleNext} className="bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-600/20">
+            Next <ChevronRight />
+          </Button>
+        ) : (
+          <Button onClick={handleSubmit} disabled={isSubmitting}
+            className="bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-600/20">
+            {isSubmitting ? <><Loader2 className="animate-spin" /> Starting...</> : "Generate Estimate"}
+          </Button>
+        )}
       </div>
     </div>
   );

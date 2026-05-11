@@ -10,11 +10,13 @@
 
 import { apiClient, buildBackendUrl } from "@/lib/api-client";
 import type {
+  CancelEstimateResponse,
   DashboardSummary,
   DuplicateEstimateResponse,
   EstimateDetail,
   EstimateListResponse,
   EstimatePatchRequest,
+  RegenerateEstimateResponse,
 } from "@/types/estimate";
 
 // ---------------------------------------------------------------------------
@@ -153,6 +155,27 @@ export async function duplicateEstimate(
   token: string
 ): Promise<DuplicateEstimateResponse> {
   return apiClient.post(`/api/estimates/${id}/duplicate`, undefined, token);
+}
+
+/**
+ * Cancel an in-progress estimation run.
+ */
+export async function cancelEstimate(
+  id: string,
+  token: string
+): Promise<CancelEstimateResponse> {
+  return apiClient.post(`/api/estimates/${id}/cancel`, undefined, token);
+}
+
+/**
+ * Regenerate a new estimate from the original wizard payload.
+ * Returns the new estimate's metadata.
+ */
+export async function regenerateEstimate(
+  id: string,
+  token: string
+): Promise<RegenerateEstimateResponse> {
+  return apiClient.post(`/api/estimates/${id}/regenerate`, undefined, token);
 }
 
 /**

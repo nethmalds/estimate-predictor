@@ -2,12 +2,12 @@
 
 Stage 1 — LLM Initial QS Pass  → baseline BOQ item list (no predictor seeds)
 Stage 2 — Real Item Predictor  → additional candidate items (genuinely missing only)
-Stage 3 — LLM Gap Fill         → compare baseline vs Item Predictor, add ONLY missing items
+Stage 3 — LLM Refinement       → compare baseline vs Item Predictor, return refined final BOQ
 
 Each item in the final list is tagged with a ``source`` field:
   ``"llm_baseline"``   — came from the LLM initial QS pass
   ``"item_predictor"`` — added because Item Predictor predicted it and LLM confirmed it missing
-  ``"llm_reconciled"`` — part of the final reconciled BOQ returned by Stage 3
+    ``"llm_reconciled"`` — part of the final refined BOQ returned by Stage 3
 """
 from __future__ import annotations
 
@@ -95,7 +95,7 @@ def build_final_boq_items(
         item["source"] = "llm_baseline"
 
     # -----------------------------------------------------------------------
-    # Stage 2: Item Predictor → additional candidate items (genuinely missing)
+    # Stage 2: Item Predictor → additional candidate items
     # Runs AFTER baseline so predictor output is only used as gap suggestions,
     # not as seeds that bias the LLM's independent QS judgement.
     # -----------------------------------------------------------------------
@@ -113,8 +113,8 @@ def build_final_boq_items(
     }
 
     # -----------------------------------------------------------------------
-    # Stage 3: LLM Gap Fill → compare baseline vs Item Predictor, add ONLY
-    # items genuinely missing from the baseline.
+    # Stage 3: LLM Refinement → compare baseline vs Item Predictor and return
+    # the final BOQ list aligned to project scope.
     # -----------------------------------------------------------------------
     reconciled_items: list[dict] = []
     try:

@@ -1,9 +1,8 @@
 """Item generation LLM client.
 
 Handles all LLM calls that are specific to BOQ item generation:
-  - generate_baseline_boq  : LLM Initial QS Pass seeded with Item Predictor hints
-  - gap_fill_boq_items     : LLM comparison & gap-fill using predictor candidates
-  - refine_boq_items       : Post-processing refinement of raw item lists
+    - generate_baseline_boq: LLM Initial QS Pass using the resolved project info
+    - gap_fill_boq_items: LLM refinement using baseline + predictor candidates
 """
 from __future__ import annotations
 
@@ -13,7 +12,7 @@ from pathlib import Path
 from string import Template
 from typing import Any
 
-from infrastructure.integrations.openrouter_client import chat
+from infrastructure.integrations.ollama_client import chat
 
 
 _SYSTEM_PROMPT = (
@@ -54,21 +53,17 @@ def generate_baseline_boq(
     unbiased QS assessment.  The Item Predictor runs afterwards as a
     separate gap-suggestion step (Stage 2 in the aligned flow).
     """
+    building_type = project_info.get("building_type", "residential").lower()
+    if building_type not in ["residential", "commercial", "industrial"]:
+        building_type = "residential"
+        
+    template_name = f"generate_baseline_boq_{building_type}.txt"
+    
     prompt = _render_template(
-        "generate_baseline_boq.txt",
+        template_name,
         project_info_json=json.dumps(project_info, ensure_ascii=True),
     )
-    messages = [
-        {"role": "system", "content": _SYSTEM_PROMPT},
-        {"role": "user", "content": prompt},
-    ]
-    content = chat(messages, stream=False)
-    parsed = _safe_json_loads(content)
-    items = parsed.get("items") if isinstance(parsed, dict) else None
-    if not isinstance(items, list):
-        return []
-    result = _normalize_boq_item_list(items)
-    return result
+    return _execute_boq_generation(prompt, "baseline")
 
 
 def gap_fill_boq_items(
@@ -76,35 +71,76 @@ def gap_fill_boq_items(
     baseline_items: list[dict],
     item_predictor_items: list[str],
 ) -> list[dict]:
-    """Final BOQ reconciliation — returns the COMPLETE final item list.
+    """Refine the baseline BOQ using predictor candidates and project constraints.
 
-    The LLM receives the baseline BOQ plus Item Predictor candidates and
-    returns a single reconciled list after adding missing items, removing
-    irrelevant or conflicting ones, deduplicating semantically, and
-    normalizing all descriptions to BSR style.
+    The LLM compares baseline items and predictor candidates, then returns
+    the final refined BOQ list for the project. If refinement fails or
+    returns empty, this function falls back to the baseline list.
     """
+    building_type = project_info.get("building_type", "residential").lower()
+    if building_type not in ["residential", "commercial", "industrial"]:
+        building_type = "residential"
+        
+    template_name = f"refine_boq_items_{building_type}.txt"
+
+    baseline_payload: list[dict[str, str]] = []
+    for item in baseline_items:
+        if not isinstance(item, dict):
+            continue
+        description = item.get("description")
+        if not description:
+            continue
+        baseline_payload.append({
+            "description": str(description),
+            "category": str(item.get("category") or "misc"),
+            "section": str(item.get("section") or "Miscellaneous"),
+        })
+
     prompt = _render_template(
-        "gap_fill_boq_items.txt",
+        template_name,
         project_info_json=json.dumps(project_info, ensure_ascii=True),
-        baseline_items_json=json.dumps(baseline_items, ensure_ascii=True),
+        baseline_items_json=json.dumps(baseline_payload, ensure_ascii=True),
         item_predictor_items_json=json.dumps(item_predictor_items, ensure_ascii=True),
     )
-    messages = [
-        {"role": "system", "content": _SYSTEM_PROMPT},
-        {"role": "user", "content": prompt},
-    ]
-    content = chat(messages, stream=False)
-    parsed = _safe_json_loads(content)
-    items = parsed.get("items") if isinstance(parsed, dict) else None
-    if not isinstance(items, list):
+    refined_items = _execute_boq_generation(
+        prompt,
+        "refine",
+        fallback_items=baseline_items,
+    )
+
+    if not refined_items:
         return baseline_items
-    result = _normalize_boq_item_list(items)
-    return result
+
+    return refined_items
 
 
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+def _execute_boq_generation(
+    prompt: str,
+    log_label: str,
+    fallback_items: list[dict] | None = None,
+) -> list[dict]:
+    import time
+    messages = [
+        {"role": "system", "content": _SYSTEM_PROMPT},
+        {"role": "user", "content": prompt},
+    ]
+    start_time = time.time()
+    content = chat(messages, stream=True)
+    elapsed = time.time() - start_time
+    print(f"LLM {log_label} BOQ generation took: {elapsed:.2f} seconds")
+    
+    parsed = _safe_json_loads(content)
+    items = parsed.get("items") if isinstance(parsed, dict) else None
+    
+    if not isinstance(items, list):
+        return fallback_items if fallback_items is not None else []
+        
+    return _normalize_boq_item_list(items)
+
 
 def _safe_json_loads(text: str) -> dict:
     try:

@@ -1,0 +1,57 @@
+You are a Quantity Surveyor for Sri Lanka BSR 2025 (Western Province).
+
+Task: Generate a baseline BOQ item list for this industrial project.
+
+Project:
+$project_info_json
+
+BSR 2025 description style examples (Western Province):
+- Site clearing manually including removal of bushes and rubbish up to 30'-0".
+- Manual Excavation for column, wall, staircase foundations in Ordinary soil up to 5'-0" depth, part return fill and ram.
+- Cement concrete 1:3:6 (1") in wall foundations including placing and compacting.
+- Volume Batched Grade 25 concrete prepared at site using mixer and vibrator in ground floor.
+- Shuttering for floor slab including dismantling in 15mm thick Plywood board up to 11'-0" soffit height.
+- Tor steel reinforcement to slabs, beams, lintols, columns bent to shape, laid in position and tied in ground floor.
+- Brick work in cement and sand 1:5 in 4 1/2" thick walls of ground floor.
+- Plastering 5/8" thick to walls in cement and sand 1:5 finished smooth with two coats of skim coat.
+- Painting walls with two coats of emulsion paint including preparing surface.
+- Roof covering with calicut pattern clay tiles on timber frame work complete with ridge hips.
+- Supply and fix white vitreous china floor standing close coupled water closet suite of Rocell brand complete to working order.
+- Supply and fix Chromium plated pillar tap (cold water) for wash basin of Rocell brand or approved equivalent.
+- Supplying laying and/or fixing 1/2" dia. uPVC pipe - PNT14 (Type 1000).
+- Light point wired through a 10 Amp one gang one way plate switch using 2x1/1.13mm P.V.C. insulated copper wire in fully concealed P.V.C. conduits.
+- Type-1-Internal Wet Areas without Exposure to Sunlight (Cementitious water proofing using Barralastic or approved equivalent)
+- Homogeneous porcelain mat floor tile 12" x 24" paving on tile adhesive bedding and pointed with tile grout.
+
+Scope rules (apply strictly):
+- Include: preliminaries, substructure, superstructure, finishes, sanitary/plumbing, electrical, testing.
+- Include external/civil items only when external_works_scope is not "none".
+- structural_system "load_bearing": omit RC frame formwork and reinforcement items.
+- roof_type "flat_slab": waterproofing items; "pitched"/"half_pitched": battens and ridge items; "metal_sheet"/"asbestos": sheet fixing items.
+- drainage_type "septic_tank": septic tank construction; "soakpit": soakpit; "mains_sewer": drain connection only; "none": omit drainage system.
+- soil_condition "expansive"/"rocky"/"waterlogged": extra earthwork/foundation items.
+- Outside Western Province: add one note item for regional rate adjustment.
+- floors > 1: separate items per floor for concrete, masonry, plastering, painting, flooring, electrical.
+- Exclude decorative finishes (gypsum ceilings, decorative ceramic tiles).
+- facility_type guidance:
+  - Factory/Manufacturing: heavy-duty slab, loading/handling provisions.
+  - Warehouse/Storage: wide-span roof, large shutter/roller doors.
+  - Cold Storage: insulated sandwich panel walls/roof, refrigeration plant room.
+  - Logistics Center: dock/apron/mezzanine provisions.
+  - Workshop: inspection pit, epoxy floor coating, compressed air pipework.
+- heavy_machinery_load "yes": machinery foundation and reinforced slab items.
+- hazardous_materials "yes": bunding/containment, chemical-resistant coating, fire suppression.
+- specialized_ventilation "yes": industrial extract fan, fume hoods, ducting.
+
+Target: 25-35 items. No quantities, no rates. Project-specific only.
+
+Return JSON only:
+{
+  "items": [
+    {
+      "description": "<BSR-style description>",
+      "category": "<one of: brick_masonry, concrete_works, demolition_and_removal, doors_windows_and_glazing, electrical_and_mechanical, excavation_and_earthwork, external_and_civil_works, flooring_and_tiling, formwork, miscellaneous, painting_and_finishes, piling_and_substructure, plastering_and_rendering, preliminary_and_general, reinforcement, roofing_and_ceiling, sanitary_and_plumbing, testing_and_commissioning>",
+      "section": "<section name>"
+    }
+  ]
+}

@@ -8,9 +8,9 @@ interface Props {
   errors: Record<string, string>;
 }
 
-const selectClass = "w-full bg-zinc-800 border border-zinc-700 text-zinc-100 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500";
+const selectClass = "w-full bg-background border border-input text-foreground rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring";
 const inputClass = selectClass;
-const labelClass = "block text-sm font-medium text-zinc-300 mb-2";
+const labelClass = "block text-sm font-medium text-foreground mb-2";
 
 export function ConstructionDetailsStep({ data, onChange, errors }: Props) {
   const field = <K extends keyof ConstructionDetails>(key: K, value: ConstructionDetails[K]) =>
@@ -27,7 +27,7 @@ export function ConstructionDetailsStep({ data, onChange, errors }: Props) {
             <option value="semi_luxury">Semi-Luxury</option>
             <option value="luxury">Luxury</option>
           </select>
-          {errors.finish_level && <p className="mt-1 text-xs text-red-400">{errors.finish_level}</p>}
+          {errors.finish_level && <p className="mt-1 text-xs text-destructive">{errors.finish_level}</p>}
         </div>
 
         <div>
@@ -38,7 +38,7 @@ export function ConstructionDetailsStep({ data, onChange, errors }: Props) {
             <option value="load_bearing">Load Bearing Masonry</option>
             <option value="hybrid">Hybrid</option>
           </select>
-          {errors.structural_system && <p className="mt-1 text-xs text-red-400">{errors.structural_system}</p>}
+          {errors.structural_system && <p className="mt-1 text-xs text-destructive">{errors.structural_system}</p>}
         </div>
 
         <div>
@@ -51,7 +51,7 @@ export function ConstructionDetailsStep({ data, onChange, errors }: Props) {
             <option value="metal_sheet">Metal Sheet Roof</option>
             <option value="other">Other</option>
           </select>
-          {errors.roof_type && <p className="mt-1 text-xs text-red-400">{errors.roof_type}</p>}
+          {errors.roof_type && <p className="mt-1 text-xs text-destructive">{errors.roof_type}</p>}
         </div>
 
         <div>
@@ -64,7 +64,7 @@ export function ConstructionDetailsStep({ data, onChange, errors }: Props) {
             <option value="concrete">Exposed Concrete (No Ceiling)</option>
             <option value="other">Other</option>
           </select>
-          {errors.ceiling_type && <p className="mt-1 text-xs text-red-400">{errors.ceiling_type}</p>}
+          {errors.ceiling_type && <p className="mt-1 text-xs text-destructive">{errors.ceiling_type}</p>}
         </div>
 
         <div>

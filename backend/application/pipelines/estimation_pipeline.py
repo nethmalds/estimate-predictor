@@ -25,6 +25,7 @@ parametric-only path.  The rejection reason is recorded in ``floorplan_meta``.
 """
 from __future__ import annotations
 
+import threading
 from typing import Callable
 
 from services.clarification_process.service import apply_defaults
@@ -42,6 +43,10 @@ from services.validation.service import validate_boq_items, validate_generated_b
 import os
 
 ProgressCallback = Callable[[str, str, dict | None], None]
+
+
+class PipelineCancelledError(Exception):
+    """Raised when a cooperative cancel signal is detected during pipeline execution."""
 
 # ---------------------------------------------------------------------------
 # Floorplan acceptance gate threshold
@@ -62,8 +67,14 @@ def run_estimation_pipeline_from_project_info(
     project_info: dict,
     floorplan_urls: list[str] | None = None,
     progress_callback: ProgressCallback | None = None,
+    cancel_event: threading.Event | None = None,
 ) -> dict:
     """Run the full 11-stage estimation from a resolved project_info dict."""
+
+    def _check_cancel() -> None:
+        """Raise PipelineCancelledError if the cancel signal has been set."""
+        if cancel_event is not None and cancel_event.is_set():
+            raise PipelineCancelledError("Pipeline cancelled by user request.")
 
     # Apply Sri Lankan construction defaults for any non-MVED fields not
     # yet set.  Must run before any service that reads parameters.
@@ -80,6 +91,7 @@ def run_estimation_pipeline_from_project_info(
         _emit(progress_callback, "floorplan_cv", "started", {"url_count": len(floorplan_urls)})
         geometries: list[dict] = []
         for i, url in enumerate(floorplan_urls):
+            _check_cancel()
             try:
                 geom = _run_floorplan_facade(url)
                 geometries.append(geom)
@@ -139,6 +151,7 @@ def run_estimation_pipeline_from_project_info(
     # -----------------------------------------------------------------------
     # Stages 3‑5: BOQ Item Generation (LLM baseline → Item Predictor → LLM gap-fill)
     # -----------------------------------------------------------------------
+    _check_cancel()
     _emit(progress_callback, "baseline_boq", "started", None)
     boq_items = build_final_boq_items(project_info, floorplan_geometry, progress_callback=progress_callback)
     _emit(
@@ -167,6 +180,7 @@ def run_estimation_pipeline_from_project_info(
     # -----------------------------------------------------------------------
     # Stage 6: RAG — BSR code / unit / rate lookup
     # -----------------------------------------------------------------------
+    _check_cancel()
     _emit(progress_callback, "bsr_matching", "started", {"item_count": len(boq_items)})
     boq_items = rag_service.match_boq_items_batch(boq_items)
     _emit(progress_callback, "bsr_matching", "completed", {"item_count": len(boq_items)})
@@ -207,6 +221,7 @@ def run_estimation_pipeline_from_project_info(
     # -----------------------------------------------------------------------
     # Stage 7: Quantity Take-Off Engine (branching)
     # -----------------------------------------------------------------------
+    _check_cancel()
     _emit(progress_callback, "quantity_takeoff", "started", {"item_count": len(boq_items)})
     boq_items = compute_quantities(boq_items, project_info, floorplan_geometry)
     _emit(progress_callback, "quantity_takeoff", "completed", {"item_count": len(boq_items)})
@@ -214,6 +229,7 @@ def run_estimation_pipeline_from_project_info(
     # -----------------------------------------------------------------------
     # Stage 8: Validation
     # -----------------------------------------------------------------------
+    _check_cancel()
     _emit(progress_callback, "validation", "started", None)
     validation_result = validate_quantities(boq_items)
     _emit(progress_callback, "validation", "completed", validation_result)
@@ -221,6 +237,7 @@ def run_estimation_pipeline_from_project_info(
     # -----------------------------------------------------------------------
     # Stage 9: Cost Calculation
     # -----------------------------------------------------------------------
+    _check_cancel()
     _emit(progress_callback, "cost_calculation", "started", None)
     costs = calculate_costs(boq_items)
     # Sync cost back onto items list (calculate_costs returns enriched items)

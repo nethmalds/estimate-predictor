@@ -16,6 +16,8 @@ import {
   patchEstimate,
   deleteEstimate,
   duplicateEstimate,
+  cancelEstimate,
+  regenerateEstimate,
   estimateKeys,
 } from "@/services/estimates.service";
 import type { EstimatePatchRequest } from "@/types/estimate";
@@ -26,6 +28,7 @@ import type { EstimatePatchRequest } from "@/types/estimate";
 
 /**
  * Fetch a paginated list of estimates for the authenticated user.
+ * Auto-polls every 4s when any estimate is in_progress.
  */
 export function useEstimateList(
   token: string | undefined,
@@ -36,11 +39,18 @@ export function useEstimateList(
     queryKey: estimateKeys.list(page, pageSize),
     queryFn: ({ signal }) => listEstimates(token!, page, pageSize, signal),
     enabled: !!token,
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (!data) return false;
+      const hasActive = data.estimates.some((e) => e.status === "in_progress");
+      return hasActive ? 4000 : false;
+    },
   });
 }
 
 /**
  * Fetch a single estimate by ID.
+ * Auto-polls every 3s when the estimate is in_progress.
  */
 export function useEstimateDetail(
   token: string | undefined,
@@ -50,6 +60,10 @@ export function useEstimateDetail(
     queryKey: estimateKeys.detail(estimateId!),
     queryFn: ({ signal }) => getEstimate(estimateId!, token!, signal),
     enabled: !!token && !!estimateId,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return status === "in_progress" ? 3000 : false;
+    },
   });
 }
 
@@ -95,6 +109,35 @@ export function useDuplicateEstimate(token: string | undefined) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => duplicateEstimate(id, token!),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: estimateKeys.lists() });
+    },
+  });
+}
+
+/**
+ * Cancel an in-progress estimate.
+ * Immediately updates the list and detail caches so the UI transitions.
+ */
+export function useCancelEstimate(token: string | undefined) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => cancelEstimate(id, token!),
+    onSuccess: (_, id) => {
+      queryClient.invalidateQueries({ queryKey: estimateKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: estimateKeys.detail(id) });
+    },
+  });
+}
+
+/**
+ * Regenerate a new estimate from the original wizard payload.
+ * Navigating to the new estimate is handled by the caller.
+ */
+export function useRegenerateEstimate(token: string | undefined) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => regenerateEstimate(id, token!),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: estimateKeys.lists() });
     },

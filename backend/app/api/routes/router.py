@@ -19,6 +19,8 @@ from app.api.controllers.estimates_controller import (
     patch_estimate,
     delete_estimate,
     duplicate_estimate,
+    cancel_estimate,
+    regenerate_estimate,
     get_dashboard_summary,
 )
 from app.api.schemas.auth_schemas import UserRegisterRequest, UserLoginRequest, ForgotPasswordRequest, ResetPasswordRequest
@@ -51,6 +53,8 @@ router.get("/estimates/{estimate_id}")(get_estimate)
 router.patch("/estimates/{estimate_id}")(patch_estimate)
 router.delete("/estimates/{estimate_id}")(delete_estimate)
 router.post("/estimates/{estimate_id}/duplicate")(duplicate_estimate)
+router.post("/estimates/{estimate_id}/cancel")(cancel_estimate)
+router.post("/estimates/{estimate_id}/regenerate")(regenerate_estimate)
 router.get("/dashboard/summary")(get_dashboard_summary)
 
 __all__ = ["router"]
