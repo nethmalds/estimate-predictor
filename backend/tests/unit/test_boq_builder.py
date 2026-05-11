@@ -1,9 +1,9 @@
 """Unit tests for build_final_boq_items in boq_builder.py.
 
 Verifies:
-- Stage order: Item Predictor → LLM baseline (seeded with hints) → LLM gap-fill
+- Stage order: LLM baseline (standalone, no predictor seeds) → Item Predictor → LLM gap-fill
 - Provenance tags: llm_baseline, llm_reconciled
-- baseline receives predictor descriptions as hints
+- baseline runs independently without predictor hints
 - Graceful degradation when any stage fails
 """
 import sys
@@ -62,19 +62,19 @@ def _make_raw_items(descriptions, category="concrete_works"):
 # ---------------------------------------------------------------------------
 
 class TestBuildFinalBoqItemsStageOrder:
-    """Verify stage order: Item Predictor → LLM baseline (seeded with hints) → LLM gap-fill."""
+    """Verify stage order: LLM baseline (standalone) → Item Predictor → LLM gap-fill."""
 
-    def test_predictor_called_before_baseline(self):
-        """predict_boq_items_with_confidence must be called before generate_baseline_boq."""
+    def test_baseline_called_before_predictor(self):
+        """generate_baseline_boq must be called BEFORE predict_boq_items_with_confidence."""
         call_order: list[str] = []
+
+        def fake_baseline(pi):
+            call_order.append("baseline")
+            return _make_raw_items(["Concrete in foundations"])
 
         def fake_predictor(pi):
             call_order.append("predictor")
             return [{"description": "Concrete in foundations", "source_confidence": 0.8}]
-
-        def fake_baseline(pi, item_predictor_hints=None):
-            call_order.append("baseline")
-            return _make_raw_items(["Concrete in foundations"])
 
         def fake_reconcile(pi, baseline, predictor):
             call_order.append("reconcile")
@@ -83,36 +83,38 @@ class TestBuildFinalBoqItemsStageOrder:
         from services.item_gen_process.boq_builder import build_final_boq_items
 
         with (
-            patch("services.item_gen_process.boq_builder.predict_boq_items_with_confidence", side_effect=fake_predictor),
             patch("services.item_gen_process.boq_builder.generate_baseline_boq", side_effect=fake_baseline),
+            patch("services.item_gen_process.boq_builder.predict_boq_items_with_confidence", side_effect=fake_predictor),
             patch("services.item_gen_process.boq_builder.gap_fill_boq_items", side_effect=fake_reconcile),
         ):
             build_final_boq_items(_make_project_info())
 
-        assert call_order == ["predictor", "baseline", "reconcile"], (
-            f"Expected predictor → baseline → reconcile, got {call_order}"
+        assert call_order == ["baseline", "predictor", "reconcile"], (
+            f"Expected baseline → predictor → reconcile, got {call_order}"
         )
 
-    def test_baseline_receives_predictor_hints(self):
-        """generate_baseline_boq must receive predictor descriptions as item_predictor_hints."""
-        captured_hints: dict = {}
+    def test_baseline_receives_no_predictor_hints(self):
+        """generate_baseline_boq must be called without item_predictor_hints (independent pass)."""
+        captured_kwargs: dict = {}
 
-        def fake_baseline(pi, item_predictor_hints=None):
-            captured_hints["value"] = item_predictor_hints
+        def fake_baseline(pi, **kwargs):
+            captured_kwargs.update(kwargs)
             return _make_raw_items(["Foundation concrete"])
 
         with (
+            patch("services.item_gen_process.boq_builder.generate_baseline_boq", side_effect=fake_baseline),
             patch("services.item_gen_process.boq_builder.predict_boq_items_with_confidence",
                   return_value=[{"description": "Foundation concrete", "source_confidence": 0.8}]),
-            patch("services.item_gen_process.boq_builder.generate_baseline_boq", side_effect=fake_baseline),
             patch("services.item_gen_process.boq_builder.gap_fill_boq_items",
                   return_value=_make_raw_items(["Foundation concrete"])),
         ):
             from services.item_gen_process.boq_builder import build_final_boq_items
             build_final_boq_items(_make_project_info())
 
-        assert captured_hints.get("value") is not None
-        assert "Foundation concrete" in captured_hints["value"]
+        # Baseline must not receive any predictor hints — it runs independently
+        assert captured_kwargs.get("item_predictor_hints") is None, (
+            "generate_baseline_boq must not receive predictor hints in the aligned flow."
+        )
 
     def test_reconcile_receives_predictor_descriptions_only(self):
         """gap_fill_boq_items must receive only the description strings from predictor output."""

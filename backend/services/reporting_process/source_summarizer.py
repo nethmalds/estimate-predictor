@@ -8,20 +8,20 @@ def build_source_summary(items: list[dict]) -> dict:
     """Count items by source type for transparency reporting.
 
     Categorises each item into one of these buckets:
-    - geometry_only       : single geometry/rule candidate, no ML fusion
-    - parametric_only     : single parametric candidate, no ML fusion
+    - geometry_only       : single geometry/rule candidate, no arithmetic-mean fusion
+    - parametric_only     : single parametric candidate, no arithmetic-mean fusion
     - ml_only             : single ML candidate (item-level)
-    - fused               : 2+ candidates were weighted-fused
+    - arithmetic_mean     : 2+ valid candidates reconciled using arithmetic mean
     - globally_allocated  : quantity derived from category-level ML global model
     - low_confidence      : quantity_confidence < 0.50
-    - discretely_rounded  : discrete unit item (whole-number check applied)
+    - discretely_rounded  : discrete unit item (winner-takes-all, ceil applied)
     - unknown             : no other category matched
     """
     summary: dict[str, int] = {
         "geometry_only":      0,
         "parametric_only":    0,
         "ml_only":            0,
-        "fused":              0,
+        "arithmetic_mean":    0,
         "globally_allocated": 0,
         "low_confidence":     0,
         "discretely_rounded": 0,
@@ -48,7 +48,7 @@ def build_source_summary(items: list[dict]) -> dict:
             continue
 
         if candidate_count >= 2:
-            summary["fused"] += 1
+            summary["arithmetic_mean"] += 1
             continue
 
         cand_types = [c.get("candidate_type", "") for c in candidates] if candidates else [source]

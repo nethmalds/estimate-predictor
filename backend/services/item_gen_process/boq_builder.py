@@ -1,13 +1,13 @@
 """Three-stage BOQ item generation.
 
-Stage 1 — Real Item Predictor  → candidate items (Random Forest predictions)
-Stage 2 — LLM Initial QS Pass  → baseline BOQ item list, seeded with predictor hints
+Stage 1 — LLM Initial QS Pass  → baseline BOQ item list (no predictor seeds)
+Stage 2 — Real Item Predictor  → additional candidate items (genuinely missing only)
 Stage 3 — LLM Gap Fill         → compare baseline vs Item Predictor, add ONLY missing items
 
 Each item in the final list is tagged with a ``source`` field:
-  ``"llm_baseline"``  — came from the LLM initial QS pass
-  ``"item_predictor"``— added because Item Predictor predicted it and LLM confirmed it missing
-  ``"llm_reconciled"``  — part of the final reconciled BOQ returned by Stage 3
+  ``"llm_baseline"``   — came from the LLM initial QS pass
+  ``"item_predictor"`` — added because Item Predictor predicted it and LLM confirmed it missing
+  ``"llm_reconciled"`` — part of the final reconciled BOQ returned by Stage 3
 """
 from __future__ import annotations
 
@@ -82,7 +82,22 @@ def build_final_boq_items(
     floors = project_info.get("floors") or 1
 
     # -----------------------------------------------------------------------
-    # Stage 1: Item Predictor → candidate items (runs first to seed Stage 2)
+    # Stage 1: LLM Initial QS Pass → baseline BOQ (standalone, no predictor seeds)
+    # The LLM produces an independent QS assessment without ML bias.
+    # -----------------------------------------------------------------------
+    baseline_items: list[dict] = []
+    try:
+        baseline_items = generate_baseline_boq(project_info)
+    except Exception:
+        baseline_items = []
+
+    for item in baseline_items:
+        item["source"] = "llm_baseline"
+
+    # -----------------------------------------------------------------------
+    # Stage 2: Item Predictor → additional candidate items (genuinely missing)
+    # Runs AFTER baseline so predictor output is only used as gap suggestions,
+    # not as seeds that bias the LLM's independent QS judgement.
     # -----------------------------------------------------------------------
     item_predictor_with_conf: list[dict] = []
     try:
@@ -98,18 +113,8 @@ def build_final_boq_items(
     }
 
     # -----------------------------------------------------------------------
-    # Stage 2: LLM Initial QS Pass → baseline BOQ, seeded with predictor hints
-    # -----------------------------------------------------------------------
-    try:
-        baseline_items = generate_baseline_boq(project_info, item_predictor_hints=item_predictor_raw)
-    except Exception:
-        baseline_items = []
-
-    for item in baseline_items:
-        item["source"] = "llm_baseline"
-
-    # -----------------------------------------------------------------------
-    # Stage 3: LLM Full Reconciliation — returns the COMPLETE final BOQ list
+    # Stage 3: LLM Gap Fill → compare baseline vs Item Predictor, add ONLY
+    # items genuinely missing from the baseline.
     # -----------------------------------------------------------------------
     reconciled_items: list[dict] = []
     try:

@@ -47,19 +47,16 @@ def _render_template(name: str, **kwargs: str) -> str:
 
 def generate_baseline_boq(
     project_info: dict,
-    item_predictor_hints: list[str] | None = None,
 ) -> list[dict]:
     """LLM Initial QS Pass — generate a baseline BOQ item list from *project_info*.
 
-    *item_predictor_hints* are the ML-predicted work-item descriptions.  They
-    are embedded in the prompt so the LLM is seeded with the categories the
-    Item Predictor expects before writing its own baseline list.
+    Runs independently of the Item Predictor so the LLM produces an
+    unbiased QS assessment.  The Item Predictor runs afterwards as a
+    separate gap-suggestion step (Stage 2 in the aligned flow).
     """
-    hints = item_predictor_hints or []
     prompt = _render_template(
         "generate_baseline_boq.txt",
         project_info_json=json.dumps(project_info, ensure_ascii=True),
-        item_predictor_hints_json=json.dumps(hints, ensure_ascii=True),
     )
     messages = [
         {"role": "system", "content": _SYSTEM_PROMPT},

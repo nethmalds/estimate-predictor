@@ -2,32 +2,8 @@ import { auth } from "@/auth";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Building2, Plus } from "lucide-react";
-
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
-
-interface EstimateItem {
-  id: string;
-  project_name: string | null;
-  status: string;
-  grand_total: number | null;
-  confidence: number | null;
-  item_count: number | null;
-  created_at: string;
-}
-
-async function fetchEstimates(accessToken: string): Promise<EstimateItem[]> {
-  try {
-    const res = await fetch(`${BACKEND_URL}/api/estimates?page_size=50`, {
-      cache: "no-store",
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-    if (!res.ok) return [];
-    const data = await res.json();
-    return data.estimates ?? [];
-  } catch {
-    return [];
-  }
-}
+import { listEstimates } from "@/services/estimates.service";
+import type { EstimateListItem } from "@/types/estimate";
 
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, string> = {
@@ -43,28 +19,20 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 export default async function EstimatesPage() {
-  const session = await auth();
+  let session;
+  try {
+    session = await auth();
+  } catch {
+    session = null;
+  }
   if (!session?.user?.id) redirect("/login");
   const accessToken = (session.user as { accessToken?: string }).accessToken ?? "";
 
-  const estimates = await fetchEstimates(accessToken);
+  const listResponse = await listEstimates(accessToken, 1, 50).catch(() => null);
+  const estimates: EstimateListItem[] = listResponse?.estimates ?? [];
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100">
-      <header className="border-b border-zinc-800 px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Link href="/dashboard" className="flex items-center gap-2">
-            <Building2 className="w-6 h-6 text-blue-400" />
-            <span className="font-bold text-lg">CostEstimate AI</span>
-          </Link>
-        </div>
-        <Link
-          href="/estimate/new"
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
-        >
-          <Plus className="w-4 h-4" /> New Estimate
-        </Link>
-      </header>
 
       <div className="max-w-6xl mx-auto px-6 py-8">
         <div className="mb-8 flex items-center justify-between">
@@ -79,7 +47,7 @@ export default async function EstimatesPage() {
             <div className="px-6 py-16 text-center">
               <p className="text-zinc-500 text-sm mb-4">No estimates yet.</p>
               <Link
-                href="/estimate/new"
+                href="/dashboard/estimate/new"
                 className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium"
               >
                 <Plus className="w-4 h-4" /> Create your first estimate
@@ -97,7 +65,7 @@ export default async function EstimatesPage() {
                 {estimates.map((est) => (
                   <Link
                     key={est.id}
-                    href={`/estimates/${est.id}`}
+                    href={`/dashboard/estimates/${est.id}`}
                     className="grid grid-cols-5 items-center px-6 py-4 hover:bg-zinc-800/50 transition-colors"
                   >
                     <div className="col-span-2">

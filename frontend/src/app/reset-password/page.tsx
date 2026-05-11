@@ -1,12 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Building2, Loader2 } from "lucide-react";
-import { Suspense } from "react";
-
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+import { resetPassword } from "@/services/auth.service";
+import { ApiError } from "@/types/api";
 
 function ResetPasswordForm() {
   const searchParams = useSearchParams();
@@ -23,19 +22,14 @@ function ResetPasswordForm() {
     setError(null);
     setLoading(true);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/auth/reset-password`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, new_password: password }),
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        setError(data.error?.message || data.detail || "Reset failed. The link may have expired.");
-      } else {
-        setDone(true);
-      }
-    } catch {
-      setError("Network error. Please try again.");
+      await resetPassword({ token, new_password: password });
+      setDone(true);
+    } catch (err) {
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : "Reset failed. The link may have expired."
+      );
     } finally {
       setLoading(false);
     }

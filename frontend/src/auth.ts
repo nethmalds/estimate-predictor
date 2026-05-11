@@ -1,9 +1,10 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
-
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+import { apiClient } from "@/lib/api-client";
+import type { LoginResponse } from "@/types/auth";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
+  trustHost: true,
   providers: [
     Credentials({
       credentials: {
@@ -12,17 +13,13 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       },
       authorize: async (credentials) => {
         try {
-          const res = await fetch(`${BACKEND_URL}/api/auth/login`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              email: credentials?.email,
-              password: credentials?.password,
-            }),
+          const user = await apiClient.post<LoginResponse>("/api/auth/login", {
+            email: credentials?.email,
+            password: credentials?.password,
           });
-          if (!res.ok) return null;
-          const user = await res.json();
+          
           if (!user?.id) return null;
+          
           return {
             id: user.id,
             name: user.name,

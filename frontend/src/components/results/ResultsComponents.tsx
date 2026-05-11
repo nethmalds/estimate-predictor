@@ -309,9 +309,11 @@ export function generateExcelReport(data: Record<string, unknown>): ArrayBuffer 
     ["Location",         parameters.location ?? "—"],
     [],
     ["COST SUMMARY", ""],
-    ["Base Total (LKR)",   costs.base_total ?? 0],
-    ["Contingencies (5%)", costs.contingencies ?? 0],
-    ["Grand Total (LKR)",  costs.total ?? 0],
+    ["Base Total (LKR)",           costs.base_total ?? 0],
+    ["External Works Total (LKR)", costs.external_works_total ?? 0],
+    ["Preliminaries",              costs.preliminaries ?? 0],
+    ["Contingencies",              costs.contingencies ?? 0],
+    ["Grand Total (LKR)",          costs.total ?? 0],
     [],
     ["ESTIMATE QUALITY", ""],
     ["Confidence Score", String(((Number((confidence as Record<string,unknown>).score) || 0) * 100).toFixed(1)) + "%"],
@@ -355,7 +357,9 @@ export function generateExcelReport(data: Record<string, unknown>): ArrayBuffer 
   });
   breakdownRows.push([]);
   breakdownRows.push(["Base Total", costs.base_total ?? 0, "100%"]);
-  breakdownRows.push(["Contingencies (5%)", costs.contingencies ?? 0, ""]);
+  breakdownRows.push(["External Works Subtotal", costs.external_works_total ?? 0, ""]);
+  breakdownRows.push(["Preliminaries", costs.preliminaries ?? 0, ""]);
+  breakdownRows.push(["Contingencies", costs.contingencies ?? 0, ""]);
   breakdownRows.push(["Grand Total", costs.total ?? 0, ""]);
   const breakdownSheet = XLSX.utils.aoa_to_sheet(breakdownRows);
   breakdownSheet["!cols"] = [{wch:36},{wch:20},{wch:16}];

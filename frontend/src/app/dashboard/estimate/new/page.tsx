@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { uploadFiles } from "@/lib/uploadthing";
-import { submitWizardForm, openFormEstimateStream } from "@/services/estimation";
+import { submitWizardForm, openFormEstimateStream } from "@/services/estimates.service";
 import {
   WizardFormData,
   WizardStepId,
@@ -149,7 +149,7 @@ export default function Home() {
     setSubmitError(null);
     try {
       const payload = buildApiPayload(formData);
-      const { session_id, estimate_id } = await submitWizardForm(payload, { accessToken });
+      const { session_id, estimate_id } = await submitWizardForm(payload, accessToken || undefined);
 
       setIsEstimating(true);
       setIsSubmitting(false);
@@ -186,7 +186,7 @@ export default function Home() {
         // Navigate to the persisted estimate detail page if we have an ID
         const resolvedEstimateId = (data.estimate_id as string | undefined) ?? estimate_id;
         if (resolvedEstimateId) {
-          router.push(`/estimates/${resolvedEstimateId}`);
+          router.push(`/dashboard/estimates/${resolvedEstimateId}`);
           return;
         }
 

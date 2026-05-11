@@ -3,8 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Building2, Loader2 } from "lucide-react";
-
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+import { forgotPassword } from "@/services/auth.service";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
@@ -17,11 +16,7 @@ export default function ForgotPasswordPage() {
     setError(null);
     setLoading(true);
     try {
-      await fetch(`${BACKEND_URL}/api/auth/forgot-password`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
-      });
+      await forgotPassword({ email });
       setSubmitted(true);
     } catch {
       setError("Network error. Please try again.");

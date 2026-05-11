@@ -4,15 +4,24 @@ Stage sequence
 --------------
 1.  [Optional] Download & cache floorplan image          (floorplan_download)
 2.  [Optional] CV pipeline → structured geometry          (floorplan_cv)
-3.  LLM Initial QS Pass → baseline BOQ                   (baseline_boq)
-4.  Real Item Predictor → additional candidate items             (item_predictor_predictions)
+2a. [Optional] Floorplan acceptance boundary gate         (floorplan_acceptance)
+3.  LLM Initial QS Pass → baseline BOQ (no ML seeds)     (baseline_boq)
+4.  Real Item Predictor → additional candidate items      (item_predictor_predictions)
 5.  LLM Gap Fill → final BOQ item list                   (gap_fill)
+5a. Pre-RAG BOQ structural validation                     (boq_validation)
 6.  RAG System → BSR codes / units / rates               (bsr_matching)
 7.  Quantity Take-Off Engine (branched)                   (quantity_takeoff)
 8.  Validation Layer (ranges + anomalies)                 (validation)
 9.  Cost Calculation Engine (qty × rate)                  (cost_calculation)
 10. Transparency & Confidence Layer                       (transparency)
 11. Reporting Module                                      (reporting)
+
+Floorplan acceptance boundary (Stage 2a)
+-----------------------------------------
+A merged geometry is accepted only when its ``geometry_confidence`` score is at
+or above ``_FLOORPLAN_ACCEPTANCE_THRESHOLD`` (default 0.30).  Below this
+threshold the geometry is rejected and downstream stages fall back to the
+parametric-only path.  The rejection reason is recorded in ``floorplan_meta``.
 """
 from __future__ import annotations
 
@@ -27,12 +36,21 @@ from services.quantity_gen_process.service import compute_quantities
 from services.pricing_process.service import calculate_costs
 from services.reporting_process.service import build_report
 from services.reporting_process.service import build_source_summary as _build_source_summary
-from services.validation.service import validate_boq_items, score_confidence, validate_quantities
+from services.validation.service import validate_boq_items, validate_generated_boq_items, score_confidence, validate_quantities
 
 
 import os
 
 ProgressCallback = Callable[[str, str, dict | None], None]
+
+# ---------------------------------------------------------------------------
+# Floorplan acceptance gate threshold
+# ---------------------------------------------------------------------------
+# Geometry with confidence below this value is rejected; downstream stages
+# fall back to the parametric-only (no-floorplan) path.
+_FLOORPLAN_ACCEPTANCE_THRESHOLD: float = float(
+    os.environ.get("FLOORPLAN_ACCEPTANCE_THRESHOLD", "0.30")
+)
 
 
 # ---------------------------------------------------------------------------
@@ -72,18 +90,48 @@ def run_estimation_pipeline_from_project_info(
 
         if geometries:
             floorplan_geometry = _merge_floorplan_geometries(geometries)
-            floorplan_meta = {
-                "available": True,
-                "source_count": len(geometries),
-                "method": floorplan_geometry.get("method"),
-                "total_floor_area_m2": floorplan_geometry.get("total_floor_area_m2"),
-                "opening_count": floorplan_geometry.get("opening_count"),
-                "room_count": floorplan_geometry.get("room_count"),
-                "geometry_confidence": floorplan_geometry.get("geometry_confidence"),
-                "scale_source": floorplan_geometry.get("scale_source"),
-                "heuristic_flags": floorplan_geometry.get("heuristic_flags"),
-            }
-            _emit(progress_callback, "floorplan_cv", "completed", floorplan_meta)
+            geo_confidence = float(floorplan_geometry.get("geometry_confidence") or 0.0)
+
+            # ── Stage 2a: Acceptance boundary gate ──────────────────────
+            if geo_confidence < _FLOORPLAN_ACCEPTANCE_THRESHOLD:
+                rejection_reason = (
+                    f"Geometry confidence {geo_confidence:.3f} is below acceptance "
+                    f"threshold {_FLOORPLAN_ACCEPTANCE_THRESHOLD:.2f}. "
+                    "Falling back to parametric-only path."
+                )
+                _emit(progress_callback, "floorplan_acceptance", "rejected",
+                      {"geometry_confidence": geo_confidence,
+                       "threshold": _FLOORPLAN_ACCEPTANCE_THRESHOLD,
+                       "reason": rejection_reason})
+                # Preserve diagnostic fields before nullifying geometry
+                _rejected_scale_source = floorplan_geometry.get("scale_source")
+                _rejected_heuristic_flags = floorplan_geometry.get("heuristic_flags")
+                floorplan_geometry = None
+                floorplan_meta = {
+                    "available": False,
+                    "accepted": False,
+                    "rejection_reason": rejection_reason,
+                    "geometry_confidence": geo_confidence,
+                    "scale_source": _rejected_scale_source,
+                    "heuristic_flags": _rejected_heuristic_flags,
+                }
+            else:
+                floorplan_meta = {
+                    "available": True,
+                    "accepted": True,
+                    "source_count": len(geometries),
+                    "method": floorplan_geometry.get("method"),
+                    "total_floor_area_m2": floorplan_geometry.get("total_floor_area_m2"),
+                    "opening_count": floorplan_geometry.get("opening_count"),
+                    "room_count": floorplan_geometry.get("room_count"),
+                    "geometry_confidence": geo_confidence,
+                    "scale_source": floorplan_geometry.get("scale_source"),
+                    "heuristic_flags": floorplan_geometry.get("heuristic_flags"),
+                }
+                _emit(progress_callback, "floorplan_acceptance", "accepted",
+                      {"geometry_confidence": geo_confidence,
+                       "threshold": _FLOORPLAN_ACCEPTANCE_THRESHOLD})
+                _emit(progress_callback, "floorplan_cv", "completed", floorplan_meta)
         else:
             _emit(progress_callback, "floorplan_cv", "failed", {"error": "All floorplan images failed processing"})
             floorplan_meta = {"available": False, "error": "All images failed"}
@@ -101,10 +149,20 @@ def run_estimation_pipeline_from_project_info(
     )
 
     # -----------------------------------------------------------------------
-    # Stage 5.5: BOQ Structural Validation (IMP-VAL-01 — moved before RAG)
-    # Items lacking description/unit/category are rejected before downstream
+    # Stage 5a: Pre-RAG BOQ Structural Validation
+    # Uses the richer validator: checks prelim presence, scope conflicts,
+    # source provenance, and structural integrity before BSR retrieval.
     # -----------------------------------------------------------------------
-    boq_validation = validate_boq_items(boq_items)
+    boq_validation = validate_generated_boq_items(boq_items, project_info)
+    boq_validation_warnings: list[str] = (
+        (boq_validation.get("errors") or []) +
+        (boq_validation.get("warnings") or [])
+    )
+    _emit(progress_callback, "boq_validation", "completed", {
+        "is_valid": boq_validation.get("is_valid"),
+        "error_count": len(boq_validation.get("errors") or []),
+        "warning_count": len(boq_validation.get("warnings") or []),
+    })
 
     # -----------------------------------------------------------------------
     # Stage 6: RAG — BSR code / unit / rate lookup
@@ -112,6 +170,39 @@ def run_estimation_pipeline_from_project_info(
     _emit(progress_callback, "bsr_matching", "started", {"item_count": len(boq_items)})
     boq_items = rag_service.match_boq_items_batch(boq_items)
     _emit(progress_callback, "bsr_matching", "completed", {"item_count": len(boq_items)})
+
+    # -----------------------------------------------------------------------
+    # Stage 6a: Post-RAG BSR Retrieval Validation
+    # Validate BSR match readiness before quantity take-off.  Items with
+    # no BSR code AND no rate (and not contractual) are flagged as warnings;
+    # they proceed to quantity take-off but get needs_rate_review = True.
+    # -----------------------------------------------------------------------
+    post_rag_warnings: list[str] = []
+    for _item in boq_items:
+        _mt = _item.get("match_type", "no_match")
+        _rate = float(_item.get("rate") or 0.0)
+        _desc = (_item.get("description") or "")[:60]
+        if _mt == "no_match":
+            post_rag_warnings.append(
+                f"'{_desc}': no BSR match found — quantity will proceed but rate is zero."
+            )
+            _item["needs_rate_review"] = True
+        elif _mt == "soft_match" and _rate <= 0.0:
+            post_rag_warnings.append(
+                f"'{_desc}': soft BSR match has zero rate — marked for review."
+            )
+            _item["needs_rate_review"] = True
+        # Validate unit propagation: BSR unit must be set for non-contractual items
+        if _mt not in ("contractual", "no_match") and not (_item.get("unit") or "").strip():
+            post_rag_warnings.append(
+                f"'{_desc}': BSR match returned no unit — quantity calculation may be unreliable."
+            )
+
+    if post_rag_warnings:
+        _emit(progress_callback, "bsr_validation", "completed", {
+            "warning_count": len(post_rag_warnings),
+            "warnings": post_rag_warnings[:5],   # surface first 5 to SSE
+        })
 
     # -----------------------------------------------------------------------
     # Stage 7: Quantity Take-Off Engine (branching)
@@ -125,7 +216,6 @@ def run_estimation_pipeline_from_project_info(
     # -----------------------------------------------------------------------
     _emit(progress_callback, "validation", "started", None)
     validation_result = validate_quantities(boq_items)
-    warnings = validation_result.get("warnings") or []
     _emit(progress_callback, "validation", "completed", validation_result)
 
     # -----------------------------------------------------------------------
@@ -135,15 +225,26 @@ def run_estimation_pipeline_from_project_info(
     costs = calculate_costs(boq_items)
     # Sync cost back onto items list (calculate_costs returns enriched items)
     boq_items = costs.pop("items", boq_items)
+    cost_consistency_warnings: list[str] = costs.pop("consistency_warnings", [])
     _emit(
         progress_callback,
         "cost_calculation",
         "completed",
         {
             "base_total": costs.get("base_total"),
+            "external_works_total": costs.get("external_works_total"),
             "total": costs.get("total"),
         },
     )
+
+    # Assemble unified warnings from all stages — done here so cost warnings are included
+    warnings: list[str] = (
+        list(boq_validation_warnings)
+        + list(post_rag_warnings)
+        + (validation_result.get("warnings") or [])
+        + list(cost_consistency_warnings)
+    )
+    validation_result["warnings"] = warnings
 
     # -----------------------------------------------------------------------
     # Stage 10: Transparency & Confidence Layer
