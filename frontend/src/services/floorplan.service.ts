@@ -28,10 +28,5 @@ export async function extractFloorplanDimensions(
 ): Promise<FloorplanOcrResponse> {
   const formData = new FormData();
   files.forEach((file) => formData.append("files", file));
-  return apiClient.postForm<FloorplanOcrResponse>(
-    "/api/floorplan-ocr",
-    formData,
-    token,
-    signal
-  );
+  return apiClient.postForm<FloorplanOcrResponse>("/api/floorplan-ocr", formData, token, signal);
 }

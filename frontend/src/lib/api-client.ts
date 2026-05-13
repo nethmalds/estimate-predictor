@@ -12,9 +12,10 @@
 
 import { ApiError } from "@/types/api";
 
-const BASE_URL = (
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"
-).replace(/\/$/, "");
+const BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000").replace(
+  /\/$/,
+  ""
+);
 
 // ---------------------------------------------------------------------------
 // Error extraction — handles FastAPI's various error shapes
@@ -61,14 +62,16 @@ async function request<T>(
   const res = await fetch(`${BASE_URL}${path}`, {
     method,
     headers,
-    body: isFormData
-      ? (body as FormData)
-      : body !== undefined
-      ? JSON.stringify(body)
-      : undefined,
+    body: isFormData ? (body as FormData) : body !== undefined ? JSON.stringify(body) : undefined,
     signal,
     cache: "no-store",
   });
+
+  // Surface the backend correlation ID in dev to aid debugging
+  if (process.env.NODE_ENV === "development") {
+    const requestId = res.headers.get("x-request-id");
+    if (requestId) console.debug("[api] X-Request-ID:", requestId);
+  }
 
   if (!res.ok) {
     const message = await extractErrorMessage(res);
@@ -90,21 +93,11 @@ export const apiClient = {
     return request<T>("GET", path, { token, signal });
   },
 
-  post<T>(
-    path: string,
-    body?: unknown,
-    token?: string,
-    signal?: AbortSignal
-  ): Promise<T> {
+  post<T>(path: string, body?: unknown, token?: string, signal?: AbortSignal): Promise<T> {
     return request<T>("POST", path, { body, token, signal });
   },
 
-  patch<T>(
-    path: string,
-    body?: unknown,
-    token?: string,
-    signal?: AbortSignal
-  ): Promise<T> {
+  patch<T>(path: string, body?: unknown, token?: string, signal?: AbortSignal): Promise<T> {
     return request<T>("PATCH", path, { body, token, signal });
   },
 
@@ -112,12 +105,7 @@ export const apiClient = {
     return request<T>("DELETE", path, { token, signal });
   },
 
-  postForm<T>(
-    path: string,
-    formData: FormData,
-    token?: string,
-    signal?: AbortSignal
-  ): Promise<T> {
+  postForm<T>(path: string, formData: FormData, token?: string, signal?: AbortSignal): Promise<T> {
     return request<T>("POST", path, {
       body: formData,
       token,

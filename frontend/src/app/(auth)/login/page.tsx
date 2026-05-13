@@ -4,7 +4,17 @@ import { useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Building2, Loader2, Mail, Lock, ArrowRight } from "lucide-react";
+import {
+  Building2,
+  Loader2,
+  Mail,
+  Lock,
+  ArrowRight,
+  CheckCircle2,
+  AlertCircle,
+} from "lucide-react";
+import { resendVerification } from "@/services/auth.service";
+import { ApiError } from "@/types/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,10 +25,15 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  // NEW: H11 — track whether login was rejected due to unverified email
+  const [emailNotVerified, setEmailNotVerified] = useState(false);
+  const [resendState, setResendState] = useState<"idle" | "loading" | "sent">("idle");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setEmailNotVerified(false);
+    setResendState("idle");
     setLoading(true);
     const result = await signIn("credentials", {
       email,
@@ -26,44 +41,94 @@ export default function LoginPage() {
       redirect: false,
     });
     setLoading(false);
-    if (result?.error) {
-      setError("Invalid email or password. Please try again.");
-    } else {
+    if (!result?.error) {
       router.push("/dashboard");
+      return;
+    }
+    // NEW: H11 — detect the email_not_verified code surfaced from auth.ts
+    if (result.code === "email_not_verified") {
+      setEmailNotVerified(true);
+      setError("Your email address has not been verified yet.");
+    } else {
+      setError("Invalid email or password. Please try again.");
+    }
+  };
+
+  // NEW: H11 — resend handler used from the error state below the form
+  const handleResend = async () => {
+    if (resendState === "loading" || !email) return;
+    setResendState("loading");
+    try {
+      await resendVerification({ email });
+      setResendState("sent");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not resend email. Try again later.");
+      setResendState("idle");
     }
   };
 
   return (
     <div className="w-full max-w-md">
       {/* Header */}
-      <div className="text-center mb-8">
-        <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-blue-500/10 border border-blue-500/20 mb-5 shadow-lg shadow-blue-500/10">
-          <Building2 className="w-7 h-7 text-blue-400" />
+      <div className="mb-8 text-center">
+        <div className="mb-5 inline-flex h-14 w-14 items-center justify-center rounded-2xl border border-blue-500/20 bg-blue-500/10 shadow-lg shadow-blue-500/10">
+          <Building2 className="h-7 w-7 text-blue-400" />
         </div>
-        <h1 className="text-3xl font-bold text-zinc-100 tracking-tight">Welcome back</h1>
-        <p className="text-zinc-400 text-sm mt-2">
-          Sign in to access your estimates dashboard
-        </p>
+        <h1 className="text-3xl font-bold tracking-tight text-zinc-100">Welcome back</h1>
+        <p className="mt-2 text-sm text-zinc-400">Sign in to access your estimates dashboard</p>
       </div>
 
       {/* Card */}
-      <div className="bg-zinc-900/80 border border-zinc-800/80 rounded-2xl p-8 shadow-2xl shadow-black/40 backdrop-blur-sm">
+      <div className="rounded-2xl border border-zinc-800/80 bg-zinc-900/80 p-8 shadow-2xl shadow-black/40 backdrop-blur-sm">
         {/* Error alert */}
         {error && (
-          <div className="mb-6 flex items-start gap-3 bg-red-500/10 border border-red-500/25 text-red-400 text-sm rounded-xl px-4 py-3.5">
-            <span className="shrink-0 mt-0.5">⚠</span>
+          <div
+            role="alert"
+            aria-live="polite"
+            className="mb-4 flex items-start gap-3 rounded-xl border border-red-500/25 bg-red-500/10 px-4 py-3.5 text-sm text-red-400"
+          >
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
             <span>{error}</span>
+          </div>
+        )}
+
+        {/* NEW: H11 — resend verification prompt shown when email is not verified */}
+        {emailNotVerified && (
+          <div className="mb-6">
+            {resendState === "sent" ? (
+              <div className="flex items-center gap-2 rounded-xl border border-green-500/25 bg-green-500/10 px-4 py-3 text-sm text-green-400">
+                <CheckCircle2 className="h-4 w-4 shrink-0" />
+                <span>Verification email resent — check your inbox.</span>
+              </div>
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleResend}
+                disabled={resendState === "loading"}
+                className="w-full rounded-xl border-zinc-700 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
+              >
+                {resendState === "loading" ? (
+                  <span className="flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Resending…
+                  </span>
+                ) : (
+                  "Resend verification email"
+                )}
+              </Button>
+            )}
           </div>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-5">
           {/* Email */}
           <div className="space-y-2">
-            <Label htmlFor="email" className="text-zinc-300 text-sm font-medium">
+            <Label htmlFor="email" className="text-sm font-medium text-zinc-300">
               Email address
             </Label>
             <div className="relative">
-              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+              <Mail className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-zinc-500" />
               <Input
                 id="email"
                 type="email"
@@ -71,7 +136,7 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@example.com"
-                className="pl-9 h-11 bg-zinc-800/60 border-zinc-700/60 text-zinc-100 placeholder:text-zinc-500 focus-visible:border-blue-500/70 focus-visible:ring-blue-500/20 rounded-xl"
+                className="h-11 rounded-xl border-zinc-700/60 bg-zinc-800/60 pl-9 text-zinc-100 placeholder:text-zinc-500 focus-visible:border-blue-500/70 focus-visible:ring-blue-500/20"
               />
             </div>
           </div>
@@ -79,18 +144,18 @@ export default function LoginPage() {
           {/* Password */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <Label htmlFor="password" className="text-zinc-300 text-sm font-medium">
+              <Label htmlFor="password" className="text-sm font-medium text-zinc-300">
                 Password
               </Label>
               <Link
                 href="/forgot-password"
-                className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                className="text-xs text-blue-400 transition-colors hover:text-blue-300"
               >
                 Forgot password?
               </Link>
             </div>
             <div className="relative">
-              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+              <Lock className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-zinc-500" />
               <Input
                 id="password"
                 type="password"
@@ -98,7 +163,7 @@ export default function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
-                className="pl-9 h-11 bg-zinc-800/60 border-zinc-700/60 text-zinc-100 placeholder:text-zinc-500 focus-visible:border-blue-500/70 focus-visible:ring-blue-500/20 rounded-xl"
+                className="h-11 rounded-xl border-zinc-700/60 bg-zinc-800/60 pl-9 text-zinc-100 placeholder:text-zinc-500 focus-visible:border-blue-500/70 focus-visible:ring-blue-500/20"
               />
             </div>
           </div>
@@ -107,17 +172,17 @@ export default function LoginPage() {
           <Button
             type="submit"
             disabled={loading}
-            className="w-full h-11 mt-2 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-xl shadow-lg shadow-blue-600/25 transition-all duration-200 hover:shadow-blue-500/30 hover:-translate-y-0.5 disabled:opacity-60 disabled:translate-y-0"
+            className="mt-2 h-11 w-full rounded-xl bg-blue-600 font-semibold text-white shadow-lg shadow-blue-600/25 transition-all duration-200 hover:-translate-y-0.5 hover:bg-blue-500 hover:shadow-blue-500/30 disabled:translate-y-0 disabled:opacity-60"
           >
             {loading ? (
               <span className="flex items-center gap-2">
-                <Loader2 className="w-4 h-4 animate-spin" />
+                <Loader2 className="h-4 w-4 animate-spin" />
                 Signing in...
               </span>
             ) : (
               <span className="flex items-center gap-2">
                 Sign in
-                <ArrowRight className="w-4 h-4" />
+                <ArrowRight className="h-4 w-4" />
               </span>
             )}
           </Button>
@@ -137,7 +202,7 @@ export default function LoginPage() {
           Don&apos;t have an account?{" "}
           <Link
             href="/register"
-            className="text-blue-400 hover:text-blue-300 font-medium transition-colors"
+            className="font-medium text-blue-400 transition-colors hover:text-blue-300"
           >
             Create one free
           </Link>
@@ -145,15 +210,21 @@ export default function LoginPage() {
       </div>
 
       {/* Footer note */}
-      <p className="text-center text-xs text-zinc-600 mt-6">
+      <p className="mt-6 text-center text-xs text-zinc-600">
         By signing in, you agree to our{" "}
-        <span className="text-zinc-500 hover:text-zinc-400 cursor-pointer transition-colors">
+        <button
+          type="button"
+          className="text-zinc-500 underline-offset-2 transition-colors hover:text-zinc-400 hover:underline"
+        >
           Terms of Service
-        </span>{" "}
+        </button>{" "}
         and{" "}
-        <span className="text-zinc-500 hover:text-zinc-400 cursor-pointer transition-colors">
+        <button
+          type="button"
+          className="text-zinc-500 underline-offset-2 transition-colors hover:text-zinc-400 hover:underline"
+        >
           Privacy Policy
-        </span>
+        </button>
         .
       </p>
     </div>

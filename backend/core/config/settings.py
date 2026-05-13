@@ -56,11 +56,32 @@ def _optional_csv(name: str) -> list[str] | None:
 	return [item for item in items if item]
 
 
+_DEFAULT_SECRET = "dev-secret-change-in-production"
+
+
+def _api_secret_key() -> str:
+	value = _optional_env("API_SECRET_KEY") or _DEFAULT_SECRET
+	if os.getenv("ENV", "development").lower() == "production" and value == _DEFAULT_SECRET:
+		raise ValueError(
+			"API_SECRET_KEY must be explicitly set in production. "
+			"Generate one with: openssl rand -base64 32"
+		)
+	return value
+
+
 def _cors_allow_origins() -> list[str]:
 	origins = _optional_csv("CORS_ALLOW_ORIGINS")
 	if origins:
 		return origins
 	return ["http://localhost:3000"]
+
+
+def _frontend_origin_from_cors() -> str:
+	for origin in _cors_allow_origins():
+		normalized = origin.strip().rstrip("/")
+		if normalized and normalized != "*" and normalized.startswith(("http://", "https://")):
+			return normalized
+	return "http://localhost:3000"
 
 
 def _database_url() -> str:
@@ -111,9 +132,7 @@ class DatabaseSettings:
 
 	# Secret key for signing backend-issued JWT access tokens.
 	# Generate with: openssl rand -base64 32
-	api_secret_key: str = field(
-		default_factory=lambda: _optional_env("API_SECRET_KEY") or "dev-secret-change-in-production"
-	)
+	api_secret_key: str = field(default_factory=_api_secret_key)
 
 	# Gmail SMTP configuration for password-reset email delivery.
 	smtp_host: str = field(default_factory=lambda: _optional_env("SMTP_HOST") or "smtp.gmail.com")
@@ -124,9 +143,13 @@ class DatabaseSettings:
 	smtp_from_name: str = field(default_factory=lambda: _optional_env("SMTP_FROM_NAME") or "CostEstimate AI")
 	smtp_starttls: bool = field(default_factory=lambda: _optional_bool("SMTP_STARTTLS", default=True))
 	smtp_ssl: bool = field(default_factory=lambda: _optional_bool("SMTP_SSL", default=False))
-	frontend_app_url: str = field(
-		default_factory=lambda: _optional_env("FRONTEND_APP_URL") or "http://localhost:3000"
-	)
+	# Primary frontend origin used for backend-generated links in auth emails.
+	# Derived from CORS_ALLOW_ORIGINS so there is a single source of truth.
+	frontend_origin: str = field(default_factory=_frontend_origin_from_cors)
+
+	# Redis URL for session store — optional; falls back to in-process store if absent
+	# Format: redis://[:password@]host[:port][/db-number]
+	redis_url: str | None = field(default_factory=lambda: _optional_env("REDIS_URL"))
 
 	# Sri Lankan BSR cost factors (configurable via .env.local)
 	# preliminaries: covers site management, temporary works, bonds etc. (default 8%)

@@ -4,43 +4,47 @@ import { Button } from "@/components/ui/button";
 
 export default function HeroSection() {
   return (
-    <section className="relative pt-32 pb-24 px-6 text-center max-w-4xl mx-auto overflow-hidden">
+    <section className="relative mx-auto max-w-4xl overflow-hidden px-6 pt-32 pb-24 text-center">
       {/* Ambient background glows */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-2xl h-[400px] bg-blue-600/15 blur-[120px] rounded-full pointer-events-none -z-10" />
+      <div
+        className="pointer-events-none absolute top-1/2 left-1/2 -z-10 h-[400px] w-full max-w-2xl -translate-x-1/2 -translate-y-1/2 rounded-full bg-blue-600/15 blur-[120px]"
+        aria-hidden="true"
+      />
 
       {/* Badge */}
-      <div className="inline-flex items-center gap-2 px-3 py-1.5 mb-8 rounded-full bg-blue-500/10 border border-blue-500/20 backdrop-blur-sm shadow-sm shadow-blue-500/10">
-        <span className="flex w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
+      <div className="mb-8 inline-flex items-center gap-2 rounded-full border border-blue-500/20 bg-blue-500/10 px-3 py-1.5 shadow-sm shadow-blue-500/10 backdrop-blur-sm">
+        <span className="flex h-2 w-2 animate-pulse rounded-full bg-blue-400" />
         <span className="text-xs font-semibold tracking-wide text-blue-300 uppercase">
           Sri Lanka Construction Cost Intelligence
         </span>
       </div>
 
       {/* Headline */}
-      <h1 className="text-5xl sm:text-6xl font-extrabold leading-[1.1] mb-6 tracking-tight text-zinc-100">
+      <h1 className="mb-6 text-5xl leading-[1.1] font-extrabold tracking-tight text-zinc-100 sm:text-6xl">
         Generate Accurate BOQ Estimates{" "}
-        <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-400">
+        <span className="bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">
           in Minutes
         </span>
       </h1>
 
       {/* Subheadline */}
-      <p className="text-zinc-400 text-lg sm:text-xl mb-10 max-w-2xl mx-auto leading-relaxed">
-        Describe your project and our AI generates a full Bill of Quantities matched against official BSR rates — no quantity surveyor required.
+      <p className="mx-auto mb-10 max-w-2xl text-lg leading-relaxed text-zinc-400 sm:text-xl">
+        Describe your project and our AI generates a full Bill of Quantities matched against
+        official BSR rates — no quantity surveyor required.
       </p>
 
       {/* CTA Buttons */}
-      <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
+      <div className="flex flex-col items-center justify-center gap-4 sm:flex-row">
         <Button
           asChild
           size="lg"
-          className="w-full sm:w-auto h-12 px-8 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-xl shadow-lg shadow-blue-600/25 transition-all duration-200 hover:shadow-blue-500/30 hover:-translate-y-0.5 text-base"
+          className="h-12 w-full rounded-xl bg-blue-600 px-8 text-base font-semibold text-white shadow-lg shadow-blue-600/25 transition-all duration-200 hover:-translate-y-0.5 hover:bg-blue-500 hover:shadow-blue-500/30 sm:w-auto"
         >
           <Link href="/login">
-            Start Free Estimate <ChevronRight className="w-4 h-4 ml-1" />
+            Start Free Estimate <ChevronRight className="ml-1 h-4 w-4" />
           </Link>
         </Button>
-      {/*   <Button
+        {/*   <Button
           asChild
           variant="outline"
           size="lg"

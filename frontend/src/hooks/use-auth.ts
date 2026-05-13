@@ -10,16 +10,8 @@
 "use client";
 
 import { useMutation } from "@tanstack/react-query";
-import {
-  register,
-  forgotPassword,
-  resetPassword,
-} from "@/services/auth.service";
-import type {
-  ForgotPasswordRequest,
-  RegisterRequest,
-  ResetPasswordRequest,
-} from "@/types/auth";
+import { register, forgotPassword, resetPassword } from "@/services/auth.service";
+import type { ForgotPasswordRequest, RegisterRequest, ResetPasswordRequest } from "@/types/auth";
 
 /**
  * Register a new user account.

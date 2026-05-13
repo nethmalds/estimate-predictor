@@ -33,10 +33,17 @@ def init_db() -> None:
 
 
 def upsert_bsr_items(session: Session, items: Iterable[dict]) -> list[BSRItem]:
-    persisted: list[BSRItem] = []
+    item_list = list(items)
+    if not item_list:
+        return []
 
-    for item in items:
-        existing = session.scalar(select(BSRItem).where(BSRItem.item_no == item["item_no"]))
+    item_nos = [row["item_no"] for row in item_list]
+    existing_rows = session.scalars(select(BSRItem).where(BSRItem.item_no.in_(item_nos))).all()
+    existing_map = {row.item_no: row for row in existing_rows}
+
+    persisted: list[BSRItem] = []
+    for item in item_list:
+        existing = existing_map.get(item["item_no"])
         if existing:
             existing.description = item["description"]
             existing.unit = item["unit"]

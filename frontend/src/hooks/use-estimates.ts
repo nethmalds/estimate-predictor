@@ -30,11 +30,7 @@ import type { EstimatePatchRequest } from "@/types/estimate";
  * Fetch a paginated list of estimates for the authenticated user.
  * Auto-polls every 4s when any estimate is in_progress.
  */
-export function useEstimateList(
-  token: string | undefined,
-  page = 1,
-  pageSize = 20
-) {
+export function useEstimateList(token: string | undefined, page = 1, pageSize = 20) {
   return useQuery({
     queryKey: estimateKeys.list(page, pageSize),
     queryFn: ({ signal }) => listEstimates(token!, page, pageSize, signal),
@@ -52,10 +48,7 @@ export function useEstimateList(
  * Fetch a single estimate by ID.
  * Auto-polls every 3s when the estimate is in_progress.
  */
-export function useEstimateDetail(
-  token: string | undefined,
-  estimateId: string | undefined
-) {
+export function useEstimateDetail(token: string | undefined, estimateId: string | undefined) {
   return useQuery({
     queryKey: estimateKeys.detail(estimateId!),
     queryFn: ({ signal }) => getEstimate(estimateId!, token!, signal),

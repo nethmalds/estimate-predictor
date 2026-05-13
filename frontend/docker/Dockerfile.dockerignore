@@ -1,0 +1,25 @@
+# NEW: Excludes files that should not be sent to the Docker build context.
+
+# Installed dependencies — builder stage runs npm ci from package-lock.json
+node_modules/
+
+# Next.js build output — produced inside the container, not from the host
+.next/
+out/
+
+# Secrets — injected at runtime, never baked in
+.env
+.env.*
+!.env.example
+
+# Test and coverage artifacts
+coverage/
+playwright-report/
+test-results/
+
+# Dev tooling
+.vscode/
+.idea/
+*.log
+.DS_Store
+Thumbs.db

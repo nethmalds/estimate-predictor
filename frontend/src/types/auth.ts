@@ -12,14 +12,6 @@ export interface RegisterRequest {
   role?: UserRole;
 }
 
-export interface RegisterResponse {
-  id: string;
-  name: string;
-  email: string;
-  role: UserRole;
-  created_at: string;
-}
-
 export interface LoginRequest {
   email: string;
   password: string;
@@ -49,5 +41,30 @@ export interface ResetPasswordRequest {
 }
 
 export interface ResetPasswordResponse {
+  message: string;
+}
+
+// NEW: H11 — email verification types
+export interface RegisterResponse {
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  created_at: string;
+  /** H11: true when a verification email was dispatched on register */
+  email_verification_sent?: boolean;
+  /** Only present in development environments for testing without real SMTP */
+  dev_verification_token?: string;
+}
+
+export interface ResendVerificationRequest {
+  email: string;
+}
+
+export interface ResendVerificationResponse {
+  message: string;
+}
+
+export interface VerifyEmailResponse {
   message: string;
 }

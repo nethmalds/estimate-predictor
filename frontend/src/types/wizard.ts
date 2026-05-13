@@ -2,7 +2,12 @@
 export type BuildingType = "residential" | "commercial" | "industrial";
 export type FinishLevel = "standard" | "semi_luxury" | "luxury";
 export type RoofType = "rc_flat_slab" | "clay_tile" | "asbestos_sheet" | "metal_sheet" | "other";
-export type CeilingType = "gypsum_mineral_fibre" | "timber" | "asbestos_flat" | "concrete" | "other";
+export type CeilingType =
+  | "gypsum_mineral_fibre"
+  | "timber"
+  | "asbestos_flat"
+  | "concrete"
+  | "other";
 export type AreaUnit = "sqft" | "m2";
 export type StructuralSystem = "framed" | "load_bearing" | "hybrid";
 export type SoilCondition = "normal" | "expansive" | "rocky" | "waterlogged";
@@ -60,8 +65,6 @@ export interface ConstructionDetails {
   drainage_type: DrainageType | "";
   external_works_scope: ExternalWorksScope | "";
 }
-
-
 
 export interface WizardFormData {
   projectBasics: ProjectBasics;

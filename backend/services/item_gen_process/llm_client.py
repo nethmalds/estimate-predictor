@@ -7,12 +7,15 @@ Handles all LLM calls that are specific to BOQ item generation:
 from __future__ import annotations
 
 import json
+import logging
 import re
 from pathlib import Path
 from string import Template
 from typing import Any
 
 from infrastructure.integrations.ollama_client import chat
+
+logger = logging.getLogger(__name__)
 
 
 _SYSTEM_PROMPT = (
@@ -131,7 +134,7 @@ def _execute_boq_generation(
     start_time = time.time()
     content = chat(messages, stream=True)
     elapsed = time.time() - start_time
-    print(f"LLM {log_label} BOQ generation took: {elapsed:.2f} seconds")
+    logger.info("LLM %s BOQ generation took: %.2f seconds", log_label, elapsed)
     
     parsed = _safe_json_loads(content)
     items = parsed.get("items") if isinstance(parsed, dict) else None

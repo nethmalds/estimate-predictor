@@ -18,18 +18,17 @@ function ResetPasswordForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (password !== confirm) { setError("Passwords do not match."); return; }
+    if (password !== confirm) {
+      setError("Passwords do not match.");
+      return;
+    }
     setError(null);
     setLoading(true);
     try {
       await resetPassword({ token, new_password: password });
       setDone(true);
     } catch (err) {
-      setError(
-        err instanceof ApiError
-          ? err.message
-          : "Reset failed. The link may have expired."
-      );
+      setError(err instanceof ApiError ? err.message : "Reset failed. The link may have expired.");
     } finally {
       setLoading(false);
     }
@@ -37,57 +36,76 @@ function ResetPasswordForm() {
 
   if (!token) {
     return (
-      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 text-center text-zinc-400 text-sm">
+      <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-6 text-center text-sm text-zinc-400">
         Invalid or missing reset token.{" "}
-        <Link href="/forgot-password" className="text-blue-400 hover:text-blue-300">Request a new link</Link>
+        <Link href="/forgot-password" className="text-blue-400 hover:text-blue-300">
+          Request a new link
+        </Link>
       </div>
     );
   }
 
   if (done) {
     return (
-      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 text-center">
-        <p className="text-zinc-300 text-sm mb-4">Password reset successfully. You can now sign in.</p>
-        <Link href="/login" className="text-blue-400 hover:text-blue-300 text-sm">Sign in</Link>
+      <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-6 text-center">
+        <p className="mb-4 text-sm text-zinc-300">
+          Password reset successfully. You can now sign in.
+        </p>
+        <Link href="/login" className="text-sm text-blue-400 hover:text-blue-300">
+          Sign in
+        </Link>
       </div>
     );
   }
 
   return (
-    <form onSubmit={handleSubmit} className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 space-y-4">
+    <form
+      onSubmit={handleSubmit}
+      className="space-y-4 rounded-xl border border-zinc-800 bg-zinc-900 p-6"
+    >
       {error && (
-        <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm rounded-lg px-4 py-3">{error}</div>
+        <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+          {error}
+        </div>
       )}
       <div>
-        <label className="block text-sm font-medium text-zinc-300 mb-1.5">New password</label>
+        <label className="mb-1.5 block text-sm font-medium text-zinc-300">New password</label>
         <input
           type="password"
           required
           minLength={8}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-500 focus:ring-2 focus:ring-blue-500 focus:outline-none"
           placeholder="Min. 8 characters"
         />
       </div>
       <div>
-        <label className="block text-sm font-medium text-zinc-300 mb-1.5">Confirm new password</label>
+        <label className="mb-1.5 block text-sm font-medium text-zinc-300">
+          Confirm new password
+        </label>
         <input
           type="password"
           required
           minLength={8}
           value={confirm}
           onChange={(e) => setConfirm(e.target.value)}
-          className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-500 focus:ring-2 focus:ring-blue-500 focus:outline-none"
           placeholder="Re-enter new password"
         />
       </div>
       <button
         type="submit"
         disabled={loading}
-        className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white rounded-lg font-semibold text-sm transition-colors"
+        className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-60"
       >
-        {loading ? <><Loader2 className="w-4 h-4 animate-spin" /> Resetting...</> : "Reset password"}
+        {loading ? (
+          <>
+            <Loader2 className="h-4 w-4 animate-spin" /> Resetting...
+          </>
+        ) : (
+          "Reset password"
+        )}
       </button>
     </form>
   );
@@ -95,18 +113,20 @@ function ResetPasswordForm() {
 
 export default function ResetPasswordPage() {
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex items-center justify-center px-4">
+    <div className="flex min-h-screen items-center justify-center bg-zinc-950 px-4 text-zinc-100">
       <div className="w-full max-w-sm">
-        <div className="text-center mb-8">
-          <Building2 className="w-8 h-8 text-blue-400 mx-auto mb-3" />
+        <div className="mb-8 text-center">
+          <Building2 className="mx-auto mb-3 h-8 w-8 text-blue-400" />
           <h1 className="text-2xl font-bold">Set new password</h1>
-          <p className="text-zinc-400 text-sm mt-1">Choose a strong password for your account.</p>
+          <p className="mt-1 text-sm text-zinc-400">Choose a strong password for your account.</p>
         </div>
-        <Suspense fallback={<div className="text-zinc-500 text-sm text-center">Loading...</div>}>
+        <Suspense fallback={<div className="text-center text-sm text-zinc-500">Loading...</div>}>
           <ResetPasswordForm />
         </Suspense>
-        <p className="text-center text-sm text-zinc-500 mt-4">
-          <Link href="/login" className="text-blue-400 hover:text-blue-300">Back to sign in</Link>
+        <p className="mt-4 text-center text-sm text-zinc-500">
+          <Link href="/login" className="text-blue-400 hover:text-blue-300">
+            Back to sign in
+          </Link>
         </p>
       </div>
     </div>

@@ -85,4 +85,3 @@ export interface RegenerateEstimateResponse {
   created_at: string;
   regenerated_from_estimate_id: string | null;
 }
-

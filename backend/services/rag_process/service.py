@@ -1,3 +1,4 @@
+import logging
 import threading
 from pathlib import Path
 
@@ -12,6 +13,9 @@ from core.config.settings import settings
 from infrastructure.data_layer.vector_db.vector_store import ChromaBSRVectorStore
 from infrastructure.data_layer.database.session import SessionLocal
 from infrastructure.data_layer.database.models.bsr_item import BSRItem
+
+
+logger = logging.getLogger(__name__)
 
 
 class BOQMatcherService:
@@ -34,15 +38,53 @@ class BOQMatcherService:
                     self.vector_store = ChromaBSRVectorStore()
         return self.vector_store
 
-    def bootstrap(self) -> None:
+    def bootstrap(self) -> dict:
+        pdf_path = Path(__file__).resolve().parents[2] / "infrastructure" / "data_layer" / "storage" / "bsr_wp_2025.pdf"
+
         with SessionLocal() as db:
-            count = db.query(BSRItem).count()
-            if count == 0:
-                pdf_path = Path(__file__).resolve().parents[2] / "infrastructure" / "data_layer" / "storage" / "bsr_wp_2025.pdf"
-                if pdf_path.exists():
-                    self.ingest_bsr_pdf(str(pdf_path))
-                else:
-                    pass  # PDF not present; DB will remain empty until manually ingested
+            postgres_count = db.query(BSRItem).count()
+
+        chroma_count = self._get_vector_store().collection.count()
+        logger.info(
+            "BSR bootstrap check: postgres_rows=%d chroma_vectors=%d collection=%s",
+            postgres_count,
+            chroma_count,
+            settings.chroma_collection,
+        )
+
+        if postgres_count > 0 and chroma_count > 0:
+            logger.info("BSR bootstrap skipped: Postgres and Chroma already contain data.")
+            return {
+                "ingested": 0,
+                "source": str(pdf_path.resolve()),
+                "postgres_rows": postgres_count,
+                "chroma_vectors": chroma_count,
+                "skipped": True,
+            }
+
+        if not pdf_path.exists():
+            logger.warning("BSR bootstrap skipped: bundled PDF not found at %s", pdf_path)
+            return {
+                "ingested": 0,
+                "message": "Bundled BSR PDF not found.",
+                "source": str(pdf_path.resolve()),
+                "postgres_rows": postgres_count,
+                "chroma_vectors": chroma_count,
+                "skipped": True,
+            }
+
+        if postgres_count > 0 and chroma_count == 0:
+            logger.info("BSR bootstrap restoring missing Chroma vectors from bundled PDF.")
+        elif postgres_count == 0:
+            logger.info("BSR bootstrap ingesting bundled PDF because Postgres is empty.")
+
+        result = self.ingest_bsr_pdf(str(pdf_path))
+        logger.info(
+            "BSR bootstrap completed: ingested=%s source=%s",
+            result.get("ingested", 0),
+            result.get("source", str(pdf_path.resolve())),
+        )
+        return result
 
     def ingest_bsr_pdf(self, pdf_path: str) -> dict:
         parsed_items = parse_bsr_pdf(pdf_path)

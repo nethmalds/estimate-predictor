@@ -11,10 +11,7 @@ const STATUS_STYLES: Record<EstimateStatus, string> = {
 
 export function StatusBadge({ status }: { status: EstimateStatus | string }) {
   return (
-    <Badge
-      variant="outline"
-      className={cn("capitalize", STATUS_STYLES[status as EstimateStatus])}
-    >
+    <Badge variant="outline" className={cn("capitalize", STATUS_STYLES[status as EstimateStatus])}>
       {status.replace("_", " ")}
     </Badge>
   );

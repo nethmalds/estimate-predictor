@@ -4,25 +4,29 @@ import { Button } from "@/components/ui/button";
 
 export default function CtaSection() {
   return (
-    <section className="py-24 px-6 relative overflow-hidden">
+    <section className="relative overflow-hidden px-6 py-24">
       {/* Background elements */}
-      <div className="absolute inset-0 bg-blue-900/10" />
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-3xl h-[300px] bg-blue-600/20 blur-[100px] rounded-full pointer-events-none" />
+      <div className="absolute inset-0 bg-blue-900/10" aria-hidden="true" />
+      <div
+        className="pointer-events-none absolute top-1/2 left-1/2 h-[300px] w-full max-w-3xl -translate-x-1/2 -translate-y-1/2 rounded-full bg-blue-600/20 blur-[100px]"
+        aria-hidden="true"
+      />
 
-      <div className="relative z-10 max-w-3xl mx-auto bg-zinc-900/80 border border-zinc-800 rounded-3xl p-10 sm:p-14 text-center backdrop-blur-md shadow-2xl shadow-black/40">
-        <h2 className="text-3xl sm:text-4xl font-bold mb-4 text-zinc-100">
+      <div className="relative z-10 mx-auto max-w-3xl rounded-3xl border border-zinc-800 bg-zinc-900/80 p-10 text-center shadow-2xl shadow-black/40 backdrop-blur-md sm:p-14">
+        <h2 className="mb-4 text-3xl font-bold text-zinc-100 sm:text-4xl">
           Ready to estimate your project?
         </h2>
-        <p className="text-zinc-400 text-lg mb-8 max-w-xl mx-auto">
-          Join homeowners and contractors using AI to generate accurate, instant construction estimates.
+        <p className="mx-auto mb-8 max-w-xl text-lg text-zinc-400">
+          Join homeowners and contractors using AI to generate accurate, instant construction
+          estimates.
         </p>
         <Button
           asChild
           size="lg"
-          className="h-12 px-8 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-xl shadow-lg shadow-blue-600/25 transition-all duration-200 hover:shadow-blue-500/30 hover:-translate-y-0.5 text-base"
+          className="h-12 rounded-xl bg-blue-600 px-8 text-base font-semibold text-white shadow-lg shadow-blue-600/25 transition-all duration-200 hover:-translate-y-0.5 hover:bg-blue-500 hover:shadow-blue-500/30"
         >
           <Link href="/register">
-            Create your free account <ArrowRight className="w-4 h-4 ml-2" />
+            Create your free account <ArrowRight className="ml-2 h-4 w-4" />
           </Link>
         </Button>
         <p className="mt-6 text-sm text-zinc-500">

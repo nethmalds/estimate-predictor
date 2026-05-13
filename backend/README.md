@@ -168,6 +168,11 @@ Use these variables for RAG (loaded from `.env.local`):
 - `CHROMA_API_KEY`
 - `EMBEDDING_MODEL`
 - `RETRIEVAL_TOP_K`
+
+Development defaults:
+
+- `CHROMA_HOST=localhost`
+- `CHROMA_PORT=8080`
 - `MIN_CONFIDENCE_THRESHOLD`
 
 ## LLM Configuration

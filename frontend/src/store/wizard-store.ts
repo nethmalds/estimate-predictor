@@ -1,11 +1,16 @@
 /**
- * Zustand wizard store with localStorage persistence.
+ * Zustand wizard store with sessionStorage persistence.
+ *
+ * Using sessionStorage (not localStorage) so project details are cleared when
+ * the browser tab closes — reduces risk of sensitive data lingering on shared
+ * machines (C6 from the hardening plan).
  *
  * Persisted state: currentStep, formData
  * Transient state (reset on mount): status, sessionId, estimateId, streamEvents
  *
- * This means if the user refreshes mid-wizard their form data is preserved,
- * but a completed/failed pipeline state is cleared so they can re-submit.
+ * This means if the user refreshes mid-wizard their form data is preserved
+ * within the same tab session, but a completed/failed pipeline state is cleared
+ * so they can re-submit.
  */
 
 import { create } from "zustand";
@@ -113,8 +118,7 @@ export const useWizardStore = create<WizardState>()(
         })),
 
       // ── Form data ──────────────────────────────────────────────────────────
-      updateFormData: (updates) =>
-        set((s) => ({ formData: { ...s.formData, ...updates } })),
+      updateFormData: (updates) => set((s) => ({ formData: { ...s.formData, ...updates } })),
 
       // ── Status ─────────────────────────────────────────────────────────────
       setStatus: (status) => set({ status }),
@@ -123,8 +127,7 @@ export const useWizardStore = create<WizardState>()(
       setSession: (sessionId, estimateId) =>
         set({ sessionId, estimateId, status: "streaming", streamEvents: [] }),
 
-      appendEvent: (event) =>
-        set((s) => ({ streamEvents: [...s.streamEvents, event] })),
+      appendEvent: (event) => set((s) => ({ streamEvents: [...s.streamEvents, event] })),
 
       setValidationErrors: (errors) => set({ validationErrors: errors }),
 
@@ -151,7 +154,8 @@ export const useWizardStore = create<WizardState>()(
     }),
     {
       name: "wizard-store",
-      storage: createJSONStorage(() => localStorage),
+      // sessionStorage clears on tab close — project details don't persist on shared machines
+      storage: createJSONStorage(() => sessionStorage),
       // Only persist the form data and current step, not transient pipeline state
       partialize: (state) => ({
         currentStep: state.currentStep,
