@@ -1,29 +1,39 @@
 "use client";
 
-import { useState } from "react";
 import { SessionProvider } from "next-auth/react";
 import {
+  isServer,
   QueryClient,
   QueryClientProvider,
 } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 
+function makeQueryClient() {
+  return new QueryClient({
+    defaultOptions: {
+      queries: {
+        staleTime: 1000 * 60 * 5,
+        refetchOnWindowFocus: false,
+        retry: 1,
+      },
+    },
+  });
+}
+
+let browserQueryClient: QueryClient | undefined = undefined;
+
+function getQueryClient() {
+  if (isServer) {
+    // Server: always create a new client so requests are isolated
+    return makeQueryClient();
+  }
+  // Browser: reuse the same client across renders
+  if (!browserQueryClient) browserQueryClient = makeQueryClient();
+  return browserQueryClient;
+}
+
 export default function Providers({ children }: { children: React.ReactNode }) {
-  const [queryClient] = useState(
-    () =>
-      new QueryClient({
-        defaultOptions: {
-          queries: {
-            // Data is considered fresh for 5 minutes
-            staleTime: 1000 * 60 * 5,
-            // Don't refetch on window focus — avoids unnecessary calls in this app
-            refetchOnWindowFocus: false,
-            // Retry once on failure before showing an error
-            retry: 1,
-          },
-        },
-      })
-  );
+  const queryClient = getQueryClient();
 
   return (
     <SessionProvider>
