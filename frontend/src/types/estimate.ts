@@ -84,4 +84,6 @@ export interface RegenerateEstimateResponse {
   project_name: string | null;
   created_at: string;
   regenerated_from_estimate_id: string | null;
+  /** Session ID for SSE streaming of the new regenerated estimate pipeline. */
+  session_id?: string;
 }

@@ -29,7 +29,7 @@ import {
 const ROLES = [
   { value: "homeowner", label: "Homeowner" },
   { value: "contractor", label: "Contractor" },
-  { value: "quantity_surveyor", label: "Quantity Surveyor" },
+  { value: "qs_engineer", label: "Quantity Surveyor" },
 ];
 
 export default function RegisterPage() {

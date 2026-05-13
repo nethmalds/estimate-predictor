@@ -20,6 +20,7 @@ class EstimateListItem(BaseModel):
     building_type: str | None = None
     floors: int | None = None
     built_up_area: str | None = None
+    floorplan_accepted: bool | None = None
     # Lifecycle fields exposed in list view
     progress: dict | None = None
     error_message: str | None = None

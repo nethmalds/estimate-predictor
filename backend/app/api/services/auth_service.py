@@ -236,13 +236,14 @@ class AuthService:
         if not user or user.is_verified:
             return {"message": "If that email exists and is unverified, a new link has been sent."}
 
-        # NEW: Rate-limit — only allow _MAX_RESENDS_PER_HOUR sends per sliding hour
+        # NEW: Rate-limit — only allow a resend if the last send was more than 2 minutes ago.
+        # A 1-hour window was too long and blocked the immediate post-registration resend.
         if user.verification_sent_at:
-            window_start = datetime.now(timezone.utc) - timedelta(hours=1)
+            window_start = datetime.now(timezone.utc) - timedelta(minutes=2)
             if user.verification_sent_at > window_start:
                 raise HTTPException(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    detail="Too many verification emails requested. Please wait before trying again.",
+                    detail="Please wait a moment before requesting another verification email.",
                 )
 
         raw_token = secrets.token_urlsafe(48)

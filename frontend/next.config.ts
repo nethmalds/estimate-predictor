@@ -18,7 +18,11 @@ const csp = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
-  "connect-src 'self' https:",
+  // In development allow HTTP to the local backend on port 8000.
+  // In production the backend is accessed over HTTPS so 'https:' covers it.
+  isDev
+    ? "connect-src 'self' http://localhost:8000 ws://localhost:8000 https:"
+    : "connect-src 'self' https:",
   "media-src 'none'",
   "object-src 'none'",
   "frame-ancestors 'none'",
