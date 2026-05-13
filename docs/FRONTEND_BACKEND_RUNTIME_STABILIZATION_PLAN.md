@@ -348,7 +348,6 @@ Recommended environment variables:
 - `SMTP_FROM_NAME=CostEstimate AI`
 - `SMTP_STARTTLS=true`
 - `SMTP_SSL=false`
-- `FRONTEND_APP_URL=http://localhost:3000`
 
 Files in scope:
 

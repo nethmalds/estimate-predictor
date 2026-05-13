@@ -1,0 +1,140 @@
+# NEW: Production Docker Compose stack.
+# Usage: ./run.sh up   (validates .env, then runs this file)
+# Services: postgres → chroma → backend → frontend → caddy
+# Only Caddy publishes ports; all other services are internal.
+
+services:
+
+  # ── Postgres 16 ────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    # NEW: Double-dollar escapes Compose interpolation so the value reaches pg_isready at runtime
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [estimator_net]
+
+  # ── ChromaDB 0.5.5 ─────────────────────────────────────────────────────────
+  chroma:
+    image: chromadb/chroma:0.5.5
+    restart: unless-stopped
+    environment:
+      IS_PERSISTENT: "TRUE"
+      PERSIST_DIRECTORY: /chroma/chroma
+    volumes:
+      - chroma_data:/chroma/chroma
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8000/api/v1/heartbeat"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks: [estimator_net]
+
+  # ── Redis (session store) ───────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --save "" --appendonly no --maxmemory 128mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [estimator_net]
+
+  # ── FastAPI backend ─────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: docker/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+      chroma:   { condition: service_healthy }
+      redis:    { condition: service_healthy }
+    environment:
+      ENV: production
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      CHROMA_HOST: chroma
+      CHROMA_PORT: 8000
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL}
+      RETRIEVAL_TOP_K: ${RETRIEVAL_TOP_K}
+      MIN_CONFIDENCE_THRESHOLD: ${MIN_CONFIDENCE_THRESHOLD}
+      OLLAMA_API_KEY: ${OLLAMA_API_KEY}
+      OLLAMA_MODEL: ${OLLAMA_MODEL}
+      # NEW: Defaults to Ollama Cloud — override with OLLAMA_HOST in .env for self-hosted
+      OLLAMA_HOST: ${OLLAMA_HOST:-https://ollama.com}
+      API_SECRET_KEY: ${API_SECRET_KEY}
+      CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS}
+      REDIS_URL: redis://redis:6379/0
+      SMTP_USERNAME: ${SMTP_USERNAME}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL}
+    volumes:
+      # NEW: hf_cache persists the ~90 MB sentence-transformer model across restarts
+      - hf_cache:/cache/huggingface
+      # NEW: storage/ mount keeps bsr_wp_2025.pdf and user uploads across image rebuilds
+      - ./backend/infrastructure/data_layer/storage:/app/infrastructure/data_layer/storage
+    networks: [estimator_net]
+
+  # ── Next.js frontend ────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: docker/Dockerfile
+      args:
+        # NEW: NEXT_PUBLIC_* must be set at build time (inlined by Next.js compiler)
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL}
+    restart: unless-stopped
+    depends_on: [backend]
+    environment:
+      AUTH_SECRET: ${AUTH_SECRET}
+      UPLOADTHING_TOKEN: ${UPLOADTHING_TOKEN}
+    networks: [estimator_net]
+
+  # ── Caddy reverse proxy + auto-TLS ─────────────────────────────────────────
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    # NEW: Only service that publishes ports; backend + frontend stay internal
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on: [backend, frontend]
+    environment:
+      # NEW: Set DOMAIN=:80 in .env for local/VPN-only no-TLS runs
+      DOMAIN: ${DOMAIN:-:80}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [estimator_net]
+
+# ── Networks ────────────────────────────────────────────────────────────────
+networks:
+  estimator_net:
+    driver: bridge
+
+# ── Volumes ─────────────────────────────────────────────────────────────────
+volumes:
+  postgres_data: {}
+  chroma_data: {}
+  # NEW: Persists HuggingFace model downloads (all-MiniLM-L6-v2 ~90 MB)
+  hf_cache: {}
+  caddy_data: {}
+  caddy_config: {}

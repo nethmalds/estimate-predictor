@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { auth } from "@/auth";
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
@@ -5,6 +6,25 @@ import { ArrowLeft } from "lucide-react";
 import EstimateDetailClient from "./EstimateDetailClient";
 import { getEstimate } from "@/services/estimates.service";
 import { Button } from "@/components/ui/button";
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}): Promise<Metadata> {
+  const { id } = await params;
+  let session;
+  try {
+    const { auth: getAuth } = await import("@/auth");
+    session = await getAuth();
+  } catch {
+    session = null;
+  }
+  const accessToken = (session?.user as { accessToken?: string } | undefined)?.accessToken ?? "";
+  const estimate = accessToken ? await getEstimate(id, accessToken).catch(() => null) : null;
+  const title = estimate?.project_name ?? "Estimate Detail";
+  return { title };
+}
 
 export default async function EstimateDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -21,20 +41,30 @@ export default async function EstimateDetailPage({ params }: { params: Promise<{
   if (!estimate) notFound();
 
   return (
-    <div className="relative p-6 max-w-6xl mx-auto overflow-hidden">
+    <div className="relative mx-auto max-w-6xl overflow-hidden p-6">
       {/* Ambient glow */}
-      <div className="absolute -top-24 right-1/4 w-[400px] h-[250px] bg-blue-600/10 blur-[100px] rounded-full pointer-events-none -z-10" />
+      <div
+        className="pointer-events-none absolute -top-24 right-1/4 -z-10 h-62.5 w-100 rounded-full bg-blue-600/10 blur-[100px]"
+        aria-hidden="true"
+      />
 
-      <Button variant="ghost" size="sm" asChild className="mb-6 -ml-2 text-zinc-400 hover:text-zinc-100">
+      <Button
+        variant="ghost"
+        size="sm"
+        asChild
+        className="mb-6 -ml-2 text-zinc-400 hover:text-zinc-100"
+      >
         <Link href="/dashboard/estimates">
           <ArrowLeft /> Back to Estimates
         </Link>
       </Button>
-      <div className="mb-6 pb-6 border-b border-border/60">
-        <h1 className="text-2xl font-bold text-zinc-100">{estimate.project_name ?? "Untitled Project"}</h1>
-        <p className="text-zinc-400 text-sm mt-1">
+      <div className="border-border/60 mb-6 border-b pb-6">
+        <h1 className="text-2xl font-bold text-zinc-100">
+          {estimate.project_name ?? "Untitled Project"}
+        </h1>
+        <p className="mt-1 text-sm text-zinc-400">
           Created {new Date(estimate.created_at).toLocaleDateString()} ·{" "}
-          <span className="capitalize text-zinc-300">{estimate.status.replace("_", " ")}</span>
+          <span className="text-zinc-300 capitalize">{estimate.status.replace("_", " ")}</span>
         </p>
       </div>
 
@@ -42,4 +72,3 @@ export default async function EstimateDetailPage({ params }: { params: Promise<{
     </div>
   );
 }
-

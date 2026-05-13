@@ -12,6 +12,9 @@ from app.api.controllers.auth_controller import (
     login_user,
     forgot_password,
     reset_password,
+    # NEW: H11
+    verify_email,
+    resend_verification,
 )
 from app.api.controllers.estimates_controller import (
     list_estimates,
@@ -46,6 +49,9 @@ router.post("/users/register")(register_user)
 router.post("/auth/login")(login_user)
 router.post("/auth/forgot-password")(forgot_password)
 router.post("/auth/reset-password")(reset_password)
+# NEW: H11 — email verification endpoints
+router.get("/auth/verify-email")(verify_email)
+router.post("/auth/resend-verification")(resend_verification)
 
 # ─── Estimates CRUD ───────────────────────────────────────────────────────────
 router.get("/estimates")(list_estimates)

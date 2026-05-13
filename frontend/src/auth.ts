@@ -1,7 +1,13 @@
-import NextAuth from "next-auth";
+import NextAuth, { CredentialsSignin } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { apiClient } from "@/lib/api-client";
+import { ApiError } from "@/types/api";
 import type { LoginResponse } from "@/types/auth";
+
+// NEW: H11 — typed error so the login page can detect unverified-email rejections
+class EmailNotVerifiedError extends CredentialsSignin {
+  code = "email_not_verified" as const;
+}
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   trustHost: true,
@@ -17,9 +23,9 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             email: credentials?.email,
             password: credentials?.password,
           });
-          
+
           if (!user?.id) return null;
-          
+
           return {
             id: user.id,
             name: user.name,
@@ -27,13 +33,22 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             role: user.role,
             accessToken: user.access_token,
           };
-        } catch {
+        } catch (err) {
+          // NEW: H11 — surface email-not-verified as a typed error so the login
+          // page can show a targeted message with a "Resend verification" link
+          if (
+            err instanceof ApiError &&
+            err.status === 403 &&
+            err.message === "email_not_verified"
+          ) {
+            throw new EmailNotVerifiedError();
+          }
           return null;
         }
       },
     }),
   ],
-  session: { strategy: "jwt", maxAge: 7 * 24 * 60 * 60 }, // 7 days
+  session: { strategy: "jwt", maxAge: 24 * 60 * 60 }, // 1 day — matches backend JWT TTL
   callbacks: {
     jwt({ token, user }) {
       if (user) {

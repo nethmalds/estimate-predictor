@@ -9,7 +9,8 @@ interface Props {
   errors: Record<string, string>;
 }
 
-const inputClass = "w-full bg-background border border-input text-foreground rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring";
+const inputClass =
+  "w-full bg-background border border-input text-foreground rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring";
 const selectClass = inputClass;
 const labelClass = "block text-sm font-medium text-foreground mb-2";
 
@@ -17,29 +18,51 @@ export function BuildingProgramStep({ data, buildingType, onChange, errors }: Pr
   if (buildingType === "residential") {
     return (
       <div className="space-y-6">
-        <p className="text-sm text-muted-foreground">Provide room counts for the residential building.</p>
+        <p className="text-muted-foreground text-sm">
+          Provide room counts for the residential building.
+        </p>
         <div className="grid grid-cols-2 gap-6">
           <div>
-            <label className={labelClass}>Bedrooms <span className="text-red-400">*</span></label>
+            <label className={labelClass}>
+              Bedrooms <span className="text-red-400">*</span>
+            </label>
             <input
-              type="number" min={1} max={50}
+              type="number"
+              min={1}
+              max={50}
               value={data.bedrooms ?? ""}
-              onChange={(e) => onChange({ ...data, bedrooms: e.target.value === "" ? "" : parseInt(e.target.value) })}
+              onChange={(e) =>
+                onChange({
+                  ...data,
+                  bedrooms: e.target.value === "" ? "" : parseInt(e.target.value),
+                })
+              }
               placeholder="e.g. 3"
               className={`${inputClass} ${errors.bedrooms ? "border-red-500" : ""}`}
             />
-            {errors.bedrooms && <p className="mt-1 text-xs text-destructive">{errors.bedrooms}</p>}
+            {errors.bedrooms && <p className="text-destructive mt-1 text-xs">{errors.bedrooms}</p>}
           </div>
           <div>
-            <label className={labelClass}>Bathrooms <span className="text-red-400">*</span></label>
+            <label className={labelClass}>
+              Bathrooms <span className="text-red-400">*</span>
+            </label>
             <input
-              type="number" min={1} max={50}
+              type="number"
+              min={1}
+              max={50}
               value={data.bathrooms ?? ""}
-              onChange={(e) => onChange({ ...data, bathrooms: e.target.value === "" ? "" : parseInt(e.target.value) })}
+              onChange={(e) =>
+                onChange({
+                  ...data,
+                  bathrooms: e.target.value === "" ? "" : parseInt(e.target.value),
+                })
+              }
               placeholder="e.g. 2"
               className={`${inputClass} ${errors.bathrooms ? "border-red-500" : ""}`}
             />
-            {errors.bathrooms && <p className="mt-1 text-xs text-destructive">{errors.bathrooms}</p>}
+            {errors.bathrooms && (
+              <p className="text-destructive mt-1 text-xs">{errors.bathrooms}</p>
+            )}
           </div>
         </div>
       </div>
@@ -49,7 +72,7 @@ export function BuildingProgramStep({ data, buildingType, onChange, errors }: Pr
   if (buildingType === "commercial") {
     return (
       <div className="space-y-6">
-        <p className="text-sm text-muted-foreground">Describe the commercial building program.</p>
+        <p className="text-muted-foreground text-sm">Describe the commercial building program.</p>
         <div>
           <label className={labelClass}>Primary Use Type</label>
           <select
@@ -74,12 +97,17 @@ export function BuildingProgramStep({ data, buildingType, onChange, errors }: Pr
             type="number"
             min={1}
             value={data.washroom_count ?? ""}
-            onChange={(e) => onChange({ ...data, washroom_count: e.target.value === "" ? "" : parseInt(e.target.value) })}
+            onChange={(e) =>
+              onChange({
+                ...data,
+                washroom_count: e.target.value === "" ? "" : parseInt(e.target.value),
+              })
+            }
             placeholder="e.g. 4"
             className={`${inputClass} ${errors.washroom_count ? "border-red-500" : ""}`}
           />
           {errors.washroom_count && (
-            <p className="text-xs text-destructive mt-1">{errors.washroom_count}</p>
+            <p className="text-destructive mt-1 text-xs">{errors.washroom_count}</p>
           )}
         </div>
       </div>
@@ -89,8 +117,10 @@ export function BuildingProgramStep({ data, buildingType, onChange, errors }: Pr
   if (buildingType === "industrial") {
     return (
       <div className="space-y-6">
-        <p className="text-sm text-muted-foreground">Describe the industrial facility and its specific requirements.</p>
-        
+        <p className="text-muted-foreground text-sm">
+          Describe the industrial facility and its specific requirements.
+        </p>
+
         <div className="grid grid-cols-2 gap-6">
           <div>
             <label className={labelClass}>Facility Type</label>
@@ -113,7 +143,9 @@ export function BuildingProgramStep({ data, buildingType, onChange, errors }: Pr
             <label className={labelClass}>Heavy Machinery Load</label>
             <select
               value={data.heavy_machinery_load ?? ""}
-              onChange={(e) => onChange({ ...data, heavy_machinery_load: e.target.value as "yes" | "no" | "" })}
+              onChange={(e) =>
+                onChange({ ...data, heavy_machinery_load: e.target.value as "yes" | "no" | "" })
+              }
               className={selectClass}
             >
               <option value="">Select...</option>
@@ -126,7 +158,9 @@ export function BuildingProgramStep({ data, buildingType, onChange, errors }: Pr
             <label className={labelClass}>Hazardous Materials</label>
             <select
               value={data.hazardous_materials ?? ""}
-              onChange={(e) => onChange({ ...data, hazardous_materials: e.target.value as "yes" | "no" | "" })}
+              onChange={(e) =>
+                onChange({ ...data, hazardous_materials: e.target.value as "yes" | "no" | "" })
+              }
               className={selectClass}
             >
               <option value="">Select...</option>
@@ -139,7 +173,9 @@ export function BuildingProgramStep({ data, buildingType, onChange, errors }: Pr
             <label className={labelClass}>Specialized Ventilation</label>
             <select
               value={data.specialized_ventilation ?? ""}
-              onChange={(e) => onChange({ ...data, specialized_ventilation: e.target.value as "yes" | "no" | "" })}
+              onChange={(e) =>
+                onChange({ ...data, specialized_ventilation: e.target.value as "yes" | "no" | "" })
+              }
               className={selectClass}
             >
               <option value="">Select...</option>
@@ -153,6 +189,8 @@ export function BuildingProgramStep({ data, buildingType, onChange, errors }: Pr
   }
 
   return (
-    <div className="text-zinc-400 text-sm">Please complete Step 1 first to select a building type.</div>
+    <div className="text-sm text-zinc-400">
+      Please complete Step 1 first to select a building type.
+    </div>
   );
 }

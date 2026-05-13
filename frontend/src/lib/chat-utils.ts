@@ -50,38 +50,48 @@ export function formatAssistantReply(result: unknown): string {
 export function generateExcelReport(data: Record<string, unknown>): ArrayBuffer {
   const wb = XLSX.utils.book_new();
   const projectInfo = (data.project_info as Record<string, unknown>) || {};
-  const parameters  = (projectInfo.parameters as Record<string, unknown>) || {};
-  const costs       = (data.costs as Record<string, unknown>) || {};
-  const confidence  = (data.confidence as Record<string, unknown>) || {};
-  const boqItems    = (data.boq_items as Record<string, unknown>[]) || [];
+  const parameters = (projectInfo.parameters as Record<string, unknown>) || {};
+  const costs = (data.costs as Record<string, unknown>) || {};
+  const confidence = (data.confidence as Record<string, unknown>) || {};
+  const boqItems = (data.boq_items as Record<string, unknown>[]) || [];
 
   const summaryRows: unknown[][] = [
     ["CONSTRUCTION COST ESTIMATION REPORT"],
     [],
     ["PROJECT DETAILS", ""],
-    ["Building Type",    projectInfo.building_type  || "—"],
-    ["Number of Floors", projectInfo.floors         || "—"],
-    ["Bedrooms",         parameters.bedrooms        || "—"],
-    ["Bathrooms",        parameters.bathrooms       || "—"],
-    ["Built-up Area",    parameters.built_up_area   || "—"],
-    ["Finish Level",     parameters.finish_level    || "—"],
-    ["Roof Type",        parameters.roof_type       || "—"],
-    ["Ceiling Type",     parameters.ceiling_type    || "—"],
+    ["Building Type", projectInfo.building_type || "—"],
+    ["Number of Floors", projectInfo.floors || "—"],
+    ["Bedrooms", parameters.bedrooms || "—"],
+    ["Bathrooms", parameters.bathrooms || "—"],
+    ["Built-up Area", parameters.built_up_area || "—"],
+    ["Finish Level", parameters.finish_level || "—"],
+    ["Roof Type", parameters.roof_type || "—"],
+    ["Ceiling Type", parameters.ceiling_type || "—"],
     [],
     ["COST SUMMARY", ""],
-    ["Base Total (LKR)",   costs.base_total   ?? 0],
+    ["Base Total (LKR)", costs.base_total ?? 0],
     ["Contingencies (5%)", costs.contingencies ?? 0],
-    ["Grand Total (LKR)",  costs.total        ?? 0],
+    ["Grand Total (LKR)", costs.total ?? 0],
     [],
     ["ESTIMATE QUALITY", ""],
-    ["Confidence Score", `${((confidence.score as number || 0) * 100).toFixed(1)}%`],
-    ["Total BOQ Items",  boqItems.length],
+    ["Confidence Score", `${(((confidence.score as number) || 0) * 100).toFixed(1)}%`],
+    ["Total BOQ Items", boqItems.length],
   ];
   const summarySheet = XLSX.utils.aoa_to_sheet(summaryRows);
   summarySheet["!cols"] = [{ wch: 30 }, { wch: 42 }];
   XLSX.utils.book_append_sheet(wb, summarySheet, "Summary");
 
-  const boqHeaders = ["No.", "Description", "Category", "Unit", "Quantity", "Rate (LKR)", "Cost (LKR)", "BSR Code", "Match %"];
+  const boqHeaders = [
+    "No.",
+    "Description",
+    "Category",
+    "Unit",
+    "Quantity",
+    "Rate (LKR)",
+    "Cost (LKR)",
+    "BSR Code",
+    "Match %",
+  ];
   const boqRows: unknown[][] = [boqHeaders];
   for (let i = 0; i < boqItems.length; i++) {
     const item = boqItems[i];
@@ -99,16 +109,33 @@ export function generateExcelReport(data: Record<string, unknown>): ArrayBuffer 
     ]);
   }
   boqRows.push([]);
-  boqRows.push(["", "", "", "", "", "GRAND TOTAL (incl. 5% Contingencies)", costs.total ?? 0, "", ""]);
+  boqRows.push([
+    "",
+    "",
+    "",
+    "",
+    "",
+    "GRAND TOTAL (incl. 5% Contingencies)",
+    costs.total ?? 0,
+    "",
+    "",
+  ]);
   const boqSheet = XLSX.utils.aoa_to_sheet(boqRows);
   boqSheet["!cols"] = [
-    { wch: 6 }, { wch: 48 }, { wch: 26 }, { wch: 10 },
-    { wch: 12 }, { wch: 16 }, { wch: 16 }, { wch: 18 }, { wch: 10 },
+    { wch: 6 },
+    { wch: 48 },
+    { wch: 26 },
+    { wch: 10 },
+    { wch: 12 },
+    { wch: 16 },
+    { wch: 16 },
+    { wch: 18 },
+    { wch: 10 },
   ];
   XLSX.utils.book_append_sheet(wb, boqSheet, "Bill of Quantities");
 
   const subtotals = (costs.subtotals as Record<string, number>) || {};
-  const baseTotal  = (costs.base_total as number) || 1;
+  const baseTotal = (costs.base_total as number) || 1;
   const breakdownRows: unknown[][] = [["Category", "Subtotal (LKR)", "% of Base Total"]];
   Object.entries(subtotals)
     .sort(([, a], [, b]) => b - a)
@@ -120,9 +147,9 @@ export function generateExcelReport(data: Record<string, unknown>): ArrayBuffer 
       ]);
     });
   breakdownRows.push([]);
-  breakdownRows.push(["Base Total",         costs.base_total   ?? 0, "100%"]);
+  breakdownRows.push(["Base Total", costs.base_total ?? 0, "100%"]);
   breakdownRows.push(["Contingencies (5%)", costs.contingencies ?? 0, ""]);
-  breakdownRows.push(["Grand Total",        costs.total        ?? 0, ""]);
+  breakdownRows.push(["Grand Total", costs.total ?? 0, ""]);
   const breakdownSheet = XLSX.utils.aoa_to_sheet(breakdownRows);
   breakdownSheet["!cols"] = [{ wch: 36 }, { wch: 20 }, { wch: 16 }];
   XLSX.utils.book_append_sheet(wb, breakdownSheet, "Cost Breakdown");

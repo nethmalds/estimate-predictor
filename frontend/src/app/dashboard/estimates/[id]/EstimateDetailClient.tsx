@@ -3,18 +3,48 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import dynamic from "next/dynamic";
+import type { BoqItem } from "@/components/results/ResultsComponents";
+
+const CostBreakdownChart = dynamic(
+  () => import("@/components/results/ResultsComponents").then((m) => m.CostBreakdownChart),
+  { loading: () => <div className="bg-muted h-64 animate-pulse rounded-lg" /> }
+);
+const ConfidenceBreakdownCard = dynamic(
+  () => import("@/components/results/ResultsComponents").then((m) => m.ConfidenceBreakdownCard),
+  { loading: () => <div className="bg-muted h-32 animate-pulse rounded-lg" /> }
+);
+const FullBoqTable = dynamic(
+  () => import("@/components/results/ResultsComponents").then((m) => m.FullBoqTable),
+  { loading: () => <div className="bg-muted h-64 animate-pulse rounded-lg" /> }
+);
+
+async function downloadExcelBlob(data: Record<string, unknown>): Promise<void> {
+  const { downloadExcelBlob: fn } = await import("@/components/results/ResultsComponents");
+  fn(data);
+}
 import {
-  CostBreakdownChart,
-  ConfidenceBreakdownCard,
-  FullBoqTable,
-  downloadExcelBlob,
-  type BoqItem,
-} from "@/components/results/ResultsComponents";
-import {
-  Download, FileText, TrendingUp, DollarSign, Edit3, Check, X,
-  Square, RefreshCw, Trash2, XCircle, Clock,
-  CheckCircle2, Loader2, ChevronDown, ChevronUp, Building2,
-  Layers, Hammer, MapPin, AlertCircle,
+  Download,
+  FileText,
+  TrendingUp,
+  DollarSign,
+  Edit3,
+  Check,
+  X,
+  Square,
+  RefreshCw,
+  Trash2,
+  XCircle,
+  Clock,
+  CheckCircle2,
+  Loader2,
+  ChevronDown,
+  ChevronUp,
+  Building2,
+  Layers,
+  Hammer,
+  MapPin,
+  AlertCircle,
 } from "lucide-react";
 import { patchEstimate } from "@/services/estimates.service";
 import {
@@ -31,11 +61,7 @@ import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -47,12 +73,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 // ---------------------------------------------------------------------------
 // Pipeline stage definitions
@@ -72,12 +93,16 @@ const PIPELINE_STAGES = [
   { key: "reporting", label: "Report Generation" },
 ] as const;
 
-type StageKey = typeof PIPELINE_STAGES[number]["key"];
+type StageKey = (typeof PIPELINE_STAGES)[number]["key"];
 
-function getStageStatus(key: StageKey, progressSteps: ProgressStep[]): "completed" | "active" | "pending" | "failed" {
+function getStageStatus(
+  key: StageKey,
+  progressSteps: ProgressStep[]
+): "completed" | "active" | "pending" | "failed" {
   const step = progressSteps.find((s) => s.step === key);
   if (!step) return "pending";
-  if (step.status === "completed" || step.status === "accepted" || step.status === "done") return "completed";
+  if (step.status === "completed" || step.status === "accepted" || step.status === "done")
+    return "completed";
   if (step.status === "rejected" || step.status === "failed") return "failed";
   return "active";
 }
@@ -126,9 +151,9 @@ function ProgressStageTimeline({ progressSteps }: { progressSteps: ProgressStep[
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-3 mb-4">
+      <div className="mb-4 flex items-center gap-3">
         <Progress value={percent} className="flex-1" />
-        <span className="text-xs font-mono text-blue-400 min-w-9 text-right">{percent}%</span>
+        <span className="min-w-9 text-right font-mono text-xs text-blue-400">{percent}%</span>
       </div>
 
       <div className="grid grid-cols-1 gap-1.5">
@@ -137,36 +162,51 @@ function ProgressStageTimeline({ progressSteps }: { progressSteps: ProgressStep[
           return (
             <div
               key={stage.key}
-              className={`flex items-center gap-3 rounded-lg px-3 py-2 transition-all border ${
+              className={`flex items-center gap-3 rounded-lg border px-3 py-2 transition-all ${
                 status === "active"
-                  ? "bg-blue-500/10 border-blue-500/20"
+                  ? "border-blue-500/20 bg-blue-500/10"
                   : status === "completed"
-                  ? "bg-muted/40 border-transparent"
-                  : status === "failed"
-                  ? "bg-destructive/10 border-destructive/20"
-                  : "bg-muted/40 border-transparent"
+                    ? "bg-muted/40 border-transparent"
+                    : status === "failed"
+                      ? "bg-destructive/10 border-destructive/20"
+                      : "bg-muted/40 border-transparent"
               }`}
             >
-              <span className={`shrink-0 ${
-                status === "completed" ? "text-green-400" :
-                status === "active" ? "text-blue-400" :
-                status === "failed" ? "text-destructive" :
-                "text-muted-foreground"
-              }`}>
-                {status === "completed" ? <CheckCircle2 className="w-4 h-4" /> :
-                 status === "active" ? <Loader2 className="w-4 h-4 animate-spin" /> :
-                 status === "failed" ? <XCircle className="w-4 h-4" /> :
-                 <div className="w-4 h-4 rounded-full border-2 border-border" />}
+              <span
+                className={`shrink-0 ${
+                  status === "completed"
+                    ? "text-green-400"
+                    : status === "active"
+                      ? "text-blue-400"
+                      : status === "failed"
+                        ? "text-destructive"
+                        : "text-muted-foreground"
+                }`}
+              >
+                {status === "completed" ? (
+                  <CheckCircle2 className="h-4 w-4" />
+                ) : status === "active" ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : status === "failed" ? (
+                  <XCircle className="h-4 w-4" />
+                ) : (
+                  <div className="border-border h-4 w-4 rounded-full border-2" />
+                )}
               </span>
-              <span className={`text-xs ${
-                status === "active" ? "text-foreground font-medium" :
-                status === "completed" ? "text-foreground/80" :
-                status === "failed" ? "text-destructive" :
-                "text-muted-foreground"
-              }`}>
+              <span
+                className={`text-xs ${
+                  status === "active"
+                    ? "text-foreground font-medium"
+                    : status === "completed"
+                      ? "text-foreground/80"
+                      : status === "failed"
+                        ? "text-destructive"
+                        : "text-muted-foreground"
+                }`}
+              >
                 {stage.label}
-                {("optional" in stage) && (
-                  <span className="ml-1 text-muted-foreground">(optional)</span>
+                {"optional" in stage && (
+                  <span className="text-muted-foreground ml-1">(optional)</span>
                 )}
               </span>
             </div>
@@ -186,7 +226,9 @@ function ProjectSpecPanel({ wizardPayload }: { wizardPayload: Record<string, unk
 
   const buildingType = wizardPayload.building_type as string | undefined;
   const floorCount = wizardPayload.floor_count as string | number | undefined;
-  const floorAreas = wizardPayload.floor_areas as Array<{ floor_label: string; area_value: number }> | undefined;
+  const floorAreas = wizardPayload.floor_areas as
+    | Array<{ floor_label: string; area_value: number }>
+    | undefined;
   const finishLevel = wizardPayload.finish_level as string | undefined;
   const structuralSystem = wizardPayload.structural_system as string | undefined;
   const roofType = wizardPayload.roof_type as string | undefined;
@@ -196,51 +238,60 @@ function ProjectSpecPanel({ wizardPayload }: { wizardPayload: Record<string, unk
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
-      <Card className="mb-6 overflow-hidden border-border/60 bg-card/80 backdrop-blur-sm">
+      <Card className="border-border/60 bg-card/80 mb-6 overflow-hidden backdrop-blur-sm">
         <CollapsibleTrigger asChild>
-          <Button variant="ghost" className="w-full flex items-center justify-between px-5 py-4 h-auto rounded-none hover:bg-white/5">
+          <Button
+            variant="ghost"
+            className="flex h-auto w-full items-center justify-between rounded-none px-5 py-4 hover:bg-white/5"
+          >
             <div className="flex items-center gap-2">
-              <Building2 className="w-4 h-4 text-zinc-400" />
+              <Building2 className="h-4 w-4 text-zinc-400" />
               <span className="text-sm font-medium text-zinc-100">Project Specification</span>
             </div>
-            {open ? <ChevronUp className="w-4 h-4 text-zinc-400" /> : <ChevronDown className="w-4 h-4 text-zinc-400" />}
+            {open ? (
+              <ChevronUp className="h-4 w-4 text-zinc-400" />
+            ) : (
+              <ChevronDown className="h-4 w-4 text-zinc-400" />
+            )}
           </Button>
         </CollapsibleTrigger>
         <CollapsibleContent>
-          <div className="px-5 pb-5 border-t border-border/60 pt-4 grid grid-cols-2 gap-x-8 gap-y-3 text-sm">
+          <div className="border-border/60 grid grid-cols-2 gap-x-8 gap-y-3 border-t px-5 pt-4 pb-5 text-sm">
             {buildingType && (
               <div className="flex items-center gap-2">
-                <Building2 className="w-3.5 h-3.5 text-muted-foreground" />
+                <Building2 className="text-muted-foreground h-3.5 w-3.5" />
                 <span className="text-muted-foreground capitalize">{buildingType}</span>
               </div>
             )}
             {floorCount && (
               <div className="flex items-center gap-2">
-                <Layers className="w-3.5 h-3.5 text-muted-foreground" />
-                <span className="text-muted-foreground">{floorCount} floor{Number(floorCount) !== 1 ? "s" : ""}</span>
+                <Layers className="text-muted-foreground h-3.5 w-3.5" />
+                <span className="text-muted-foreground">
+                  {floorCount} floor{Number(floorCount) !== 1 ? "s" : ""}
+                </span>
               </div>
             )}
             {finishLevel && (
               <div className="flex items-center gap-2">
-                <Hammer className="w-3.5 h-3.5 text-muted-foreground" />
+                <Hammer className="text-muted-foreground h-3.5 w-3.5" />
                 <span className="text-muted-foreground capitalize">{finishLevel} finish</span>
               </div>
             )}
             {structuralSystem && (
               <div className="flex items-center gap-2">
-                <Building2 className="w-3.5 h-3.5 text-muted-foreground" />
+                <Building2 className="text-muted-foreground h-3.5 w-3.5" />
                 <span className="text-muted-foreground capitalize">{structuralSystem}</span>
               </div>
             )}
             {roofType && (
               <div className="flex items-center gap-2">
-                <Building2 className="w-3.5 h-3.5 text-muted-foreground" />
+                <Building2 className="text-muted-foreground h-3.5 w-3.5" />
                 <span className="text-muted-foreground capitalize">{roofType} roof</span>
               </div>
             )}
             {location && (
               <div className="flex items-center gap-2">
-                <MapPin className="w-3.5 h-3.5 text-muted-foreground" />
+                <MapPin className="text-muted-foreground h-3.5 w-3.5" />
                 <span className="text-muted-foreground capitalize">{location}</span>
               </div>
             )}
@@ -251,10 +302,13 @@ function ProjectSpecPanel({ wizardPayload }: { wizardPayload: Record<string, unk
             )}
             {floorAreas && floorAreas.length > 0 && (
               <div className="col-span-2">
-                <p className="text-xs text-muted-foreground mb-1">Floor Areas</p>
+                <p className="text-muted-foreground mb-1 text-xs">Floor Areas</p>
                 <div className="flex flex-wrap gap-2">
                   {floorAreas.map((fa) => (
-                    <span key={fa.floor_label} className="text-xs bg-muted rounded px-2 py-0.5 text-muted-foreground">
+                    <span
+                      key={fa.floor_label}
+                      className="bg-muted text-muted-foreground rounded px-2 py-0.5 text-xs"
+                    >
                       {fa.floor_label}: {fa.area_value} m²
                     </span>
                   ))}
@@ -263,8 +317,9 @@ function ProjectSpecPanel({ wizardPayload }: { wizardPayload: Record<string, unk
             )}
             {floorplanUrls && floorplanUrls.length > 0 && (
               <div className="col-span-2">
-                <p className="text-xs text-muted-foreground">
-                  {floorplanUrls.length} floor plan image{floorplanUrls.length > 1 ? "s" : ""} uploaded
+                <p className="text-muted-foreground text-xs">
+                  {floorplanUrls.length} floor plan image{floorplanUrls.length > 1 ? "s" : ""}{" "}
+                  uploaded
                 </p>
               </div>
             )}
@@ -375,29 +430,29 @@ export default function EstimateDetailClient({
       <div className="space-y-6">
         {wizardPayload && <ProjectSpecPanel wizardPayload={wizardPayload} />}
 
-        <Card className="overflow-hidden border-border/60 bg-card/80 backdrop-blur-sm">
-          <div className="relative h-1.5 bg-muted overflow-hidden">
-            <div className="absolute inset-0 bg-linear-to-r from-blue-600 via-blue-400 to-blue-600 animate-pulse" />
+        <Card className="border-border/60 bg-card/80 overflow-hidden backdrop-blur-sm">
+          <div className="bg-muted relative h-1.5 overflow-hidden">
+            <div className="absolute inset-0 animate-pulse bg-linear-to-r from-blue-600 via-blue-400 to-blue-600" />
           </div>
 
           <CardContent className="p-6">
-            <div className="flex items-start justify-between mb-6">
+            <div className="mb-6 flex items-start justify-between">
               <div>
                 <h3 className="text-base font-semibold text-zinc-100">Estimation in Progress</h3>
-                <p className="text-sm text-zinc-400 mt-0.5">
+                <p className="mt-0.5 text-sm text-zinc-400">
                   AI is analysing your project and generating the BOQ...
                 </p>
               </div>
-              <div className="flex items-center gap-2 bg-zinc-800/60 rounded-lg px-3 py-1.5">
-                <Clock className="w-3.5 h-3.5 text-zinc-400" />
-                <span className="text-sm font-mono text-zinc-100">{formatTime(elapsed)}</span>
+              <div className="flex items-center gap-2 rounded-lg bg-zinc-800/60 px-3 py-1.5">
+                <Clock className="h-3.5 w-3.5 text-zinc-400" />
+                <span className="font-mono text-sm text-zinc-100">{formatTime(elapsed)}</span>
               </div>
             </div>
 
             <ProgressStageTimeline progressSteps={progressSteps} />
 
-            <div className="mt-6 pt-5 border-t border-border flex items-center justify-between">
-              <p className="text-xs text-muted-foreground">
+            <div className="border-border mt-6 flex items-center justify-between border-t pt-5">
+              <p className="text-muted-foreground text-xs">
                 You can leave this page — estimation continues in the background.
               </p>
               <TooltipProvider>
@@ -408,9 +463,15 @@ export default function EstimateDetailClient({
                       onClick={handleCancel}
                       disabled={cancelMutation.isPending}
                     >
-                      {cancelMutation.isPending
-                        ? <><Loader2 className="animate-spin" /> Stopping...</>
-                        : <><Square /> Stop Estimation</>}
+                      {cancelMutation.isPending ? (
+                        <>
+                          <Loader2 className="animate-spin" /> Stopping...
+                        </>
+                      ) : (
+                        <>
+                          <Square /> Stop Estimation
+                        </>
+                      )}
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>Stop the estimation run</TooltipContent>
@@ -433,21 +494,22 @@ export default function EstimateDetailClient({
 
         <Card>
           <CardContent className="p-8 text-center">
-            {isCancelled
-              ? <XCircle className="w-12 h-12 text-amber-400 mx-auto mb-4" />
-              : <AlertCircle className="w-12 h-12 text-destructive mx-auto mb-4" />
-            }
-            <h3 className="text-lg font-semibold mb-2">
+            {isCancelled ? (
+              <XCircle className="mx-auto mb-4 h-12 w-12 text-amber-400" />
+            ) : (
+              <AlertCircle className="text-destructive mx-auto mb-4 h-12 w-12" />
+            )}
+            <h3 className="mb-2 text-lg font-semibold">
               {isCancelled ? "Estimation Stopped" : "Estimation Failed"}
             </h3>
-            <p className="text-sm text-muted-foreground mb-1">
+            <p className="text-muted-foreground mb-1 text-sm">
               {isCancelled
                 ? "You stopped this estimation run."
                 : "An error occurred during estimation."}
             </p>
 
             {estimate.error_message && (
-              <div className="mt-4 max-w-lg mx-auto">
+              <div className="mx-auto mt-4 max-w-lg">
                 <Alert variant="destructive">
                   <AlertCircle className="h-4 w-4" />
                   <AlertTitle>Error details</AlertTitle>
@@ -456,7 +518,7 @@ export default function EstimateDetailClient({
               </div>
             )}
 
-            <div className="flex items-center justify-center gap-3 mt-6">
+            <div className="mt-6 flex items-center justify-center gap-3">
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -464,9 +526,15 @@ export default function EstimateDetailClient({
                       onClick={handleRegenerate}
                       disabled={regenerateMutation.isPending || !estimate.wizard_payload}
                     >
-                      {regenerateMutation.isPending
-                        ? <><Loader2 className="animate-spin" /> Starting...</>
-                        : <><RefreshCw /> Regenerate Estimate</>}
+                      {regenerateMutation.isPending ? (
+                        <>
+                          <Loader2 className="animate-spin" /> Starting...
+                        </>
+                      ) : (
+                        <>
+                          <RefreshCw /> Regenerate Estimate
+                        </>
+                      )}
                     </Button>
                   </TooltipTrigger>
                   {!estimate.wizard_payload && (
@@ -503,7 +571,7 @@ export default function EstimateDetailClient({
             </div>
 
             {!estimate.wizard_payload && (
-              <p className="text-xs text-muted-foreground mt-3">
+              <p className="text-muted-foreground mt-3 text-xs">
                 Regenerate is unavailable — no wizard data was stored for this estimate.
               </p>
             )}
@@ -516,9 +584,21 @@ export default function EstimateDetailClient({
   // ── Completed view ──────────────────────────────────────────────────────
 
   const summaryCards = [
-    { label: "Grand Total", value: `LKR ${grandTotal.toLocaleString()}`, icon: <DollarSign className="w-5 h-5 text-blue-400" /> },
-    { label: "Confidence Score", value: `${((Number(confidence.score ?? estimate.confidence ?? 0)) * 100).toFixed(1)}%`, icon: <TrendingUp className="w-5 h-5 text-green-400" /> },
-    { label: "BOQ Items", value: boqItems.length || estimate.item_count || 0, icon: <FileText className="w-5 h-5 text-purple-400" /> },
+    {
+      label: "Grand Total",
+      value: `LKR ${grandTotal.toLocaleString()}`,
+      icon: <DollarSign className="h-5 w-5 text-blue-400" />,
+    },
+    {
+      label: "Confidence Score",
+      value: `${(Number(confidence.score ?? estimate.confidence ?? 0) * 100).toFixed(1)}%`,
+      icon: <TrendingUp className="h-5 w-5 text-green-400" />,
+    },
+    {
+      label: "BOQ Items",
+      value: boqItems.length || estimate.item_count || 0,
+      icon: <FileText className="h-5 w-5 text-purple-400" />,
+    },
   ];
 
   return (
@@ -531,19 +611,12 @@ export default function EstimateDetailClient({
           {editing ? (
             <div className="space-y-3">
               <div>
-                <Label className="text-xs mb-1 text-zinc-400">Project name</Label>
-                <Input
-                  value={projectName}
-                  onChange={(e) => setProjectName(e.target.value)}
-                />
+                <Label className="mb-1 text-xs text-zinc-400">Project name</Label>
+                <Input value={projectName} onChange={(e) => setProjectName(e.target.value)} />
               </div>
               <div>
-                <Label className="text-xs mb-1 text-zinc-400">Notes</Label>
-                <Textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  rows={3}
-                />
+                <Label className="mb-1 text-xs text-zinc-400">Notes</Label>
+                <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} />
               </div>
               <div className="flex gap-2">
                 <Button size="sm" onClick={saveEdits} disabled={saving}>
@@ -557,13 +630,20 @@ export default function EstimateDetailClient({
           ) : (
             <div className="flex items-start justify-between">
               <div>
-                <p className="text-sm font-medium text-zinc-100">{projectName || "Untitled Project"}</p>
-                {notes && <p className="text-xs text-zinc-400 mt-1">{notes}</p>}
+                <p className="text-sm font-medium text-zinc-100">
+                  {projectName || "Untitled Project"}
+                </p>
+                {notes && <p className="mt-1 text-xs text-zinc-400">{notes}</p>}
               </div>
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button size="sm" variant="ghost" onClick={() => setEditing(true)} className="text-zinc-400 hover:text-zinc-100">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setEditing(true)}
+                      className="text-zinc-400 hover:text-zinc-100"
+                    >
                       <Edit3 /> Edit
                     </Button>
                   </TooltipTrigger>
@@ -580,7 +660,7 @@ export default function EstimateDetailClient({
         {summaryCards.map((c) => (
           <Card key={c.label} className="border-border/60 bg-card/80 backdrop-blur-sm">
             <CardContent className="p-4">
-              <div className="flex items-center justify-between mb-2">
+              <div className="mb-2 flex items-center justify-between">
                 <p className="text-xs text-zinc-400">{c.label}</p>
                 {c.icon}
               </div>
@@ -591,21 +671,17 @@ export default function EstimateDetailClient({
       </div>
 
       {/* ── Confidence breakdown ── */}
-      {Object.keys(confidence).length > 0 && (
-        <ConfidenceBreakdownCard confidence={confidence} />
-      )}
+      {Object.keys(confidence).length > 0 && <ConfidenceBreakdownCard confidence={confidence} />}
 
       {/* ── Cost breakdown chart ── */}
-      {Object.keys(subtotals).length > 0 && (
-        <CostBreakdownChart subtotals={subtotals} />
-      )}
+      {Object.keys(subtotals).length > 0 && <CostBreakdownChart subtotals={subtotals} />}
 
       {/* ── Full BOQ table ── */}
       {boqItems.length > 0 ? (
         <FullBoqTable items={boqItems} grandTotal={grandTotal} />
       ) : (
         <Card className="border-border/60 bg-card/80">
-          <CardContent className="p-8 text-center text-zinc-400 text-sm">
+          <CardContent className="p-8 text-center text-sm text-zinc-400">
             No BOQ items available for this estimate.
           </CardContent>
         </Card>
@@ -614,7 +690,10 @@ export default function EstimateDetailClient({
       {/* ── Actions bar ── */}
       <div className="flex flex-wrap items-center gap-3 pt-2">
         {result && boqItems.length > 0 && (
-          <Button onClick={() => downloadExcelBlob(result)} className="bg-blue-600 hover:bg-blue-500 text-white">
+          <Button
+            onClick={() => downloadExcelBlob(result)}
+            className="bg-blue-600 text-white hover:bg-blue-500"
+          >
             <Download /> Download Excel Report
           </Button>
         )}
@@ -627,9 +706,15 @@ export default function EstimateDetailClient({
                 onClick={handleRegenerate}
                 disabled={regenerateMutation.isPending || !estimate.wizard_payload}
               >
-                {regenerateMutation.isPending
-                  ? <><Loader2 className="animate-spin" /> Starting...</>
-                  : <><RefreshCw /> Regenerate</>}
+                {regenerateMutation.isPending ? (
+                  <>
+                    <Loader2 className="animate-spin" /> Starting...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw /> Regenerate
+                  </>
+                )}
               </Button>
             </TooltipTrigger>
             {!estimate.wizard_payload && (
@@ -653,7 +738,8 @@ export default function EstimateDetailClient({
               <AlertDialogHeader>
                 <AlertDialogTitle>Delete estimate?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  This will permanently delete &quot;{projectName || "Untitled Project"}&quot;. This action cannot be undone.
+                  This will permanently delete &quot;{projectName || "Untitled Project"}&quot;. This
+                  action cannot be undone.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>

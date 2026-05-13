@@ -41,8 +41,7 @@ export type WizardValidateResponse = {
 export const estimateKeys = {
   all: ["estimates"] as const,
   lists: () => [...estimateKeys.all, "list"] as const,
-  list: (page: number, pageSize: number) =>
-    [...estimateKeys.lists(), { page, pageSize }] as const,
+  list: (page: number, pageSize: number) => [...estimateKeys.lists(), { page, pageSize }] as const,
   details: () => [...estimateKeys.all, "detail"] as const,
   detail: (id: string) => [...estimateKeys.details(), id] as const,
   dashboard: () => ["dashboard", "summary"] as const,
@@ -90,9 +89,7 @@ export async function submitWizardForm(
  * The caller is responsible for closing the EventSource when done.
  */
 export function openFormEstimateStream(sessionId: string): EventSource {
-  return new EventSource(
-    buildBackendUrl(`/api/estimate-project/form/stream/${sessionId}`)
-  );
+  return new EventSource(buildBackendUrl(`/api/estimate-project/form/stream/${sessionId}`));
 }
 
 // ---------------------------------------------------------------------------
@@ -140,10 +137,7 @@ export async function patchEstimate(
 /**
  * Soft-delete an estimate.
  */
-export async function deleteEstimate(
-  id: string,
-  token: string
-): Promise<{ message: string }> {
+export async function deleteEstimate(id: string, token: string): Promise<{ message: string }> {
   return apiClient.delete(`/api/estimates/${id}`, token);
 }
 
@@ -160,10 +154,7 @@ export async function duplicateEstimate(
 /**
  * Cancel an in-progress estimation run.
  */
-export async function cancelEstimate(
-  id: string,
-  token: string
-): Promise<CancelEstimateResponse> {
+export async function cancelEstimate(id: string, token: string): Promise<CancelEstimateResponse> {
   return apiClient.post(`/api/estimates/${id}/cancel`, undefined, token);
 }
 
@@ -185,9 +176,5 @@ export async function getDashboardSummary(
   token: string,
   signal?: AbortSignal
 ): Promise<DashboardSummary> {
-  return apiClient.get<DashboardSummary>(
-    "/api/dashboard/summary",
-    token,
-    signal
-  );
+  return apiClient.get<DashboardSummary>("/api/dashboard/summary", token, signal);
 }

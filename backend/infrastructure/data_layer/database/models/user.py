@@ -33,6 +33,12 @@ class User(Base):
     last_login_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # NEW: H11 — email verification fields
+    is_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    verification_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    verification_sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     estimates: Mapped[list["Estimate"]] = relationship(
         "Estimate", back_populates="user", cascade="all, delete-orphan"

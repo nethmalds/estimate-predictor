@@ -3,7 +3,16 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Building2, Loader2, User, Mail, Lock, ShieldCheck, ArrowRight } from "lucide-react";
+import {
+  Building2,
+  Loader2,
+  User,
+  Mail,
+  Lock,
+  ShieldCheck,
+  ArrowRight,
+  AlertCircle,
+} from "lucide-react";
 import { register } from "@/services/auth.service";
 import { ApiError } from "@/types/api";
 import { Button } from "@/components/ui/button";
@@ -20,7 +29,7 @@ import {
 const ROLES = [
   { value: "homeowner", label: "Homeowner" },
   { value: "contractor", label: "Contractor" },
-  { value: "quantity_surveyor", label: "Quantity Surveyor" },
+  { value: "qs_engineer", label: "Quantity Surveyor" },
 ];
 
 export default function RegisterPage() {
@@ -50,16 +59,16 @@ export default function RegisterPage() {
         password: form.password,
         role: form.role as "homeowner" | "qs_engineer" | "contractor",
       });
-      router.push("/login?registered=1");
+      // NEW: H11 — redirect to "check your inbox" page instead of straight to login
+      router.push(`/register/check-email?email=${encodeURIComponent(form.email)}`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Registration failed. Please try again.");
       setLoading(false);
     }
   };
 
-  const setField =
-    (field: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
-      setForm((f) => ({ ...f, [field]: e.target.value }));
+  const setField = (field: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm((f) => ({ ...f, [field]: e.target.value }));
 
   const inputClass =
     "h-11 bg-zinc-800/60 border-zinc-700/60 text-zinc-100 placeholder:text-zinc-500 focus-visible:border-blue-500/70 focus-visible:ring-blue-500/20 rounded-xl";
@@ -67,22 +76,24 @@ export default function RegisterPage() {
   return (
     <div className="w-full max-w-md">
       {/* Header */}
-      <div className="text-center mb-8">
-        <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-blue-500/10 border border-blue-500/20 mb-5 shadow-lg shadow-blue-500/10">
-          <Building2 className="w-7 h-7 text-blue-400" />
+      <div className="mb-8 text-center">
+        <div className="mb-5 inline-flex h-14 w-14 items-center justify-center rounded-2xl border border-blue-500/20 bg-blue-500/10 shadow-lg shadow-blue-500/10">
+          <Building2 className="h-7 w-7 text-blue-400" />
         </div>
-        <h1 className="text-3xl font-bold text-zinc-100 tracking-tight">Create account</h1>
-        <p className="text-zinc-400 text-sm mt-2">
-          Start generating AI-powered estimates for free
-        </p>
+        <h1 className="text-3xl font-bold tracking-tight text-zinc-100">Create account</h1>
+        <p className="mt-2 text-sm text-zinc-400">Start generating AI-powered estimates for free</p>
       </div>
 
       {/* Card */}
-      <div className="bg-zinc-900/80 border border-zinc-800/80 rounded-2xl p-8 shadow-2xl shadow-black/40 backdrop-blur-sm">
+      <div className="rounded-2xl border border-zinc-800/80 bg-zinc-900/80 p-8 shadow-2xl shadow-black/40 backdrop-blur-sm">
         {/* Error */}
         {error && (
-          <div className="mb-6 flex items-start gap-3 bg-red-500/10 border border-red-500/25 text-red-400 text-sm rounded-xl px-4 py-3.5">
-            <span className="shrink-0 mt-0.5">⚠</span>
+          <div
+            role="alert"
+            aria-live="polite"
+            className="mb-6 flex items-start gap-3 rounded-xl border border-red-500/25 bg-red-500/10 px-4 py-3.5 text-sm text-red-400"
+          >
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
             <span>{error}</span>
           </div>
         )}
@@ -90,11 +101,11 @@ export default function RegisterPage() {
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Full name */}
           <div className="space-y-2">
-            <Label htmlFor="name" className="text-zinc-300 text-sm font-medium">
+            <Label htmlFor="name" className="text-sm font-medium text-zinc-300">
               Full name
             </Label>
             <div className="relative">
-              <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+              <User className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-zinc-500" />
               <Input
                 id="name"
                 type="text"
@@ -109,11 +120,11 @@ export default function RegisterPage() {
 
           {/* Email */}
           <div className="space-y-2">
-            <Label htmlFor="email" className="text-zinc-300 text-sm font-medium">
+            <Label htmlFor="email" className="text-sm font-medium text-zinc-300">
               Email address
             </Label>
             <div className="relative">
-              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+              <Mail className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-zinc-500" />
               <Input
                 id="email"
                 type="email"
@@ -129,11 +140,11 @@ export default function RegisterPage() {
           {/* Password row */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
-              <Label htmlFor="password" className="text-zinc-300 text-sm font-medium">
+              <Label htmlFor="password" className="text-sm font-medium text-zinc-300">
                 Password
               </Label>
               <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+                <Lock className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-zinc-500" />
                 <Input
                   id="password"
                   type="password"
@@ -147,11 +158,11 @@ export default function RegisterPage() {
               </div>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="confirmPassword" className="text-zinc-300 text-sm font-medium">
+              <Label htmlFor="confirmPassword" className="text-sm font-medium text-zinc-300">
                 Confirm
               </Label>
               <div className="relative">
-                <ShieldCheck className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+                <ShieldCheck className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-zinc-500" />
                 <Input
                   id="confirmPassword"
                   type="password"
@@ -168,7 +179,7 @@ export default function RegisterPage() {
 
           {/* Role */}
           <div className="space-y-2">
-            <Label htmlFor="role" className="text-zinc-300 text-sm font-medium">
+            <Label htmlFor="role" className="text-sm font-medium text-zinc-300">
               I am a&hellip;
             </Label>
             <Select
@@ -177,11 +188,11 @@ export default function RegisterPage() {
             >
               <SelectTrigger
                 id="role"
-                className="h-11 w-full bg-zinc-800/60 border-zinc-700/60 text-zinc-100 rounded-xl focus:border-blue-500/70 focus:ring-blue-500/20"
+                className="h-11 w-full rounded-xl border-zinc-700/60 bg-zinc-800/60 text-zinc-100 focus:border-blue-500/70 focus:ring-blue-500/20"
               >
                 <SelectValue placeholder="Select your role" />
               </SelectTrigger>
-              <SelectContent className="bg-zinc-900 border-zinc-800 text-zinc-100">
+              <SelectContent className="border-zinc-800 bg-zinc-900 text-zinc-100">
                 {ROLES.map((r) => (
                   <SelectItem
                     key={r.value}
@@ -199,17 +210,17 @@ export default function RegisterPage() {
           <Button
             type="submit"
             disabled={loading}
-            className="w-full h-11 mt-2 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-xl shadow-lg shadow-blue-600/25 transition-all duration-200 hover:shadow-blue-500/30 hover:-translate-y-0.5 disabled:opacity-60 disabled:translate-y-0"
+            className="mt-2 h-11 w-full rounded-xl bg-blue-600 font-semibold text-white shadow-lg shadow-blue-600/25 transition-all duration-200 hover:-translate-y-0.5 hover:bg-blue-500 hover:shadow-blue-500/30 disabled:translate-y-0 disabled:opacity-60"
           >
             {loading ? (
               <span className="flex items-center gap-2">
-                <Loader2 className="w-4 h-4 animate-spin" />
+                <Loader2 className="h-4 w-4 animate-spin" />
                 Creating account...
               </span>
             ) : (
               <span className="flex items-center gap-2">
                 Create account
-                <ArrowRight className="w-4 h-4" />
+                <ArrowRight className="h-4 w-4" />
               </span>
             )}
           </Button>
@@ -229,7 +240,7 @@ export default function RegisterPage() {
           Have an account?{" "}
           <Link
             href="/login"
-            className="text-blue-400 hover:text-blue-300 font-medium transition-colors"
+            className="font-medium text-blue-400 transition-colors hover:text-blue-300"
           >
             Sign in instead
           </Link>
@@ -237,15 +248,21 @@ export default function RegisterPage() {
       </div>
 
       {/* Footer note */}
-      <p className="text-center text-xs text-zinc-600 mt-6">
+      <p className="mt-6 text-center text-xs text-zinc-600">
         By registering, you agree to our{" "}
-        <span className="text-zinc-500 hover:text-zinc-400 cursor-pointer transition-colors">
+        <button
+          type="button"
+          className="text-zinc-500 underline-offset-2 transition-colors hover:text-zinc-400 hover:underline"
+        >
           Terms of Service
-        </span>{" "}
+        </button>{" "}
         and{" "}
-        <span className="text-zinc-500 hover:text-zinc-400 cursor-pointer transition-colors">
+        <button
+          type="button"
+          className="text-zinc-500 underline-offset-2 transition-colors hover:text-zinc-400 hover:underline"
+        >
           Privacy Policy
-        </span>
+        </button>
         .
       </p>
     </div>

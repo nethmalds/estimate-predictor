@@ -13,6 +13,7 @@ import {
   BuildingProgram,
   ConstructionDetails,
 } from "@/types/wizard";
+import { validateStep } from "@/lib/schemas/wizard";
 import { WizardProgress } from "@/components/wizard/WizardProgress";
 import { ProjectBasicsStep } from "@/components/wizard/steps/ProjectBasicsStep";
 import { FloorAreasStep } from "@/components/wizard/steps/FloorAreasStep";
@@ -30,8 +31,14 @@ const INITIAL_FORM: WizardFormData = {
   floorAreas: { floor_areas: [] },
   buildingProgram: {},
   constructionDetails: {
-    finish_level: "", structural_system: "", roof_type: "", ceiling_type: "",
-    location: "", soil_condition: "", drainage_type: "", external_works_scope: "",
+    finish_level: "",
+    structural_system: "",
+    roof_type: "",
+    ceiling_type: "",
+    location: "",
+    soil_condition: "",
+    drainage_type: "",
+    external_works_scope: "",
   },
 };
 
@@ -50,43 +57,7 @@ function buildApiPayload(form: WizardFormData): Record<string, unknown> {
   };
 }
 
-// --- Step validation ---
-
-function validateStep(step: WizardStepId, form: WizardFormData): Record<string, string> {
-  const errors: Record<string, string> = {};
-  if (step === 1) {
-    if (!form.projectBasics.building_type) errors.building_type = "Please select a building type.";
-    const fc = Number(form.projectBasics.floor_count);
-    if (!fc || fc < 1 || fc > 100) errors.floor_count = "Floor count must be between 1 and 100.";
-  }
-  if (step === 2) {
-    if (!form.floorAreas.floor_areas.length) {
-      errors.floor_areas = "Please enter area for at least one floor.";
-    } else {
-      form.floorAreas.floor_areas.forEach((row, i) => {
-        const v = typeof row.area_value === "number" ? row.area_value : parseFloat(String(row.area_value));
-        if (!v || v <= 0) errors["floor_areas[" + i + "]"] = row.floor_label + " area must be greater than zero.";
-      });
-    }
-  }
-  if (step === 3 && form.projectBasics.building_type === "residential") {
-    const b = Number(form.buildingProgram.bedrooms);
-    if (!b || b < 1 || b > 50) errors.bedrooms = "Please enter a valid number of bedrooms (1-50).";
-    const bt = Number(form.buildingProgram.bathrooms);
-    if (!bt || bt < 1 || bt > 50) errors.bathrooms = "Please enter a valid number of bathrooms (1-50).";
-  }
-  if (step === 3 && form.projectBasics.building_type === "commercial") {
-    const wc = Number(form.buildingProgram.washroom_count);
-    if (!wc || wc < 1) errors.washroom_count = "Commercial buildings must have at least 1 washroom.";
-  }
-  if (step === 4) {
-    if (!form.constructionDetails.finish_level) errors.finish_level = "Please select a finish level.";
-    if (!form.constructionDetails.structural_system) errors.structural_system = "Please select a structural system.";
-    if (!form.constructionDetails.roof_type) errors.roof_type = "Please select a roof type.";
-    if (!form.constructionDetails.ceiling_type) errors.ceiling_type = "Please select a ceiling type.";
-  }
-  return errors;
-}
+// validateStep is imported from @/lib/schemas/wizard (zod-backed)
 
 // --- Main component ---
 
@@ -146,11 +117,11 @@ export default function NewEstimatePage() {
   // Brief "started" screen shown while router.push is navigating.
   if (started) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="text-center max-w-sm">
-          <CheckCircle className="w-12 h-12 text-green-400 mx-auto mb-4" />
-          <h2 className="text-lg font-semibold text-zinc-100 mb-2">Estimation Started!</h2>
-          <p className="text-zinc-400 text-sm">Redirecting to your estimate...</p>
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <div className="max-w-sm text-center">
+          <CheckCircle className="mx-auto mb-4 h-12 w-12 text-green-400" />
+          <h2 className="mb-2 text-lg font-semibold text-zinc-100">Estimation Started!</h2>
+          <p className="text-sm text-zinc-400">Redirecting to your estimate...</p>
         </div>
       </div>
     );
@@ -159,13 +130,15 @@ export default function NewEstimatePage() {
   const floorCount = Number(formData.projectBasics.floor_count) || 1;
 
   return (
-    <div className="relative p-6 max-w-4xl mx-auto space-y-6 overflow-hidden">
+    <div className="relative mx-auto max-w-4xl space-y-6 overflow-hidden p-6">
       {/* Ambient glow */}
-      <div className="absolute -top-20 left-1/3 w-[400px] h-[250px] bg-blue-600/10 blur-[100px] rounded-full pointer-events-none -z-10" />
+      <div className="pointer-events-none absolute -top-20 left-1/3 -z-10 h-[250px] w-[400px] rounded-full bg-blue-600/10 blur-[100px]" />
 
       <div>
         <h1 className="text-2xl font-bold text-zinc-100">Construction Cost Estimator</h1>
-        <p className="text-zinc-400 text-sm mt-1">Complete the form to generate your Bill of Quantities estimate.</p>
+        <p className="mt-1 text-sm text-zinc-400">
+          Complete the form to generate your Bill of Quantities estimate.
+        </p>
       </div>
 
       <WizardProgress steps={WIZARD_STEPS} currentStep={currentStep} />
@@ -173,7 +146,9 @@ export default function NewEstimatePage() {
       <Card className="border-border/60 bg-card/80 backdrop-blur-sm">
         <CardHeader>
           <CardTitle className="text-zinc-100">{WIZARD_STEPS[currentStep - 1].title}</CardTitle>
-          <CardDescription className="text-zinc-400">{WIZARD_STEPS[currentStep - 1].description}</CardDescription>
+          <CardDescription className="text-zinc-400">
+            {WIZARD_STEPS[currentStep - 1].description}
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {currentStep === 1 && (
@@ -202,7 +177,9 @@ export default function NewEstimatePage() {
           {currentStep === 4 && (
             <ConstructionDetailsStep
               data={formData.constructionDetails}
-              onChange={(d: ConstructionDetails) => setFormData((f) => ({ ...f, constructionDetails: d }))}
+              onChange={(d: ConstructionDetails) =>
+                setFormData((f) => ({ ...f, constructionDetails: d }))
+              }
               errors={stepErrors}
             />
           )}
@@ -218,19 +195,35 @@ export default function NewEstimatePage() {
       </Card>
 
       <div className="flex items-center justify-between">
-        <Button variant="outline" onClick={handleBack} disabled={currentStep === 1}
-          className="border-border/60 text-zinc-300 hover:text-zinc-100">
+        <Button
+          variant="outline"
+          onClick={handleBack}
+          disabled={currentStep === 1}
+          className="border-border/60 text-zinc-300 hover:text-zinc-100"
+        >
           <ChevronLeft /> Back
         </Button>
 
         {currentStep < 5 ? (
-          <Button onClick={handleNext} className="bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-600/20">
+          <Button
+            onClick={handleNext}
+            className="bg-blue-600 text-white shadow-lg shadow-blue-600/20 hover:bg-blue-500"
+          >
             Next <ChevronRight />
           </Button>
         ) : (
-          <Button onClick={handleSubmit} disabled={isSubmitting}
-            className="bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-600/20">
-            {isSubmitting ? <><Loader2 className="animate-spin" /> Starting...</> : "Generate Estimate"}
+          <Button
+            onClick={handleSubmit}
+            disabled={isSubmitting}
+            className="bg-blue-600 text-white shadow-lg shadow-blue-600/20 hover:bg-blue-500"
+          >
+            {isSubmitting ? (
+              <>
+                <Loader2 className="animate-spin" /> Starting...
+              </>
+            ) : (
+              "Generate Estimate"
+            )}
           </Button>
         )}
       </div>

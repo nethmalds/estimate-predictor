@@ -41,21 +41,21 @@ export function AppSidebar({ user }: AppSidebarProps) {
     .toUpperCase();
 
   return (
-    <Sidebar collapsible="none" className="sticky top-0 px-1 h-svh">
+    <Sidebar collapsible="none" className="sticky top-0 h-svh px-1">
       {/* Brand */}
-      <SidebarHeader className="border-b border-border px-4 py-8">
+      <SidebarHeader className="border-border border-b px-4 py-8">
         <Link href="/" className="flex items-center gap-3">
-          <Building2 className="w-6 h-6 text-blue-400 shrink-0" />
-          <span className="font-bold text-base tracking-tight">CostEstimate AI</span>
+          <Building2 className="h-6 w-6 shrink-0 text-blue-400" />
+          <span className="text-base font-bold tracking-tight">CostEstimate AI</span>
         </Link>
       </SidebarHeader>
 
       <SidebarContent className="pt-4">
         {/* New Estimate CTA */}
-        <div className="px-3 mb-4">
+        <div className="mb-4 px-3">
           <Button asChild className="w-full">
             <Link href="/dashboard/estimate/new">
-              <Plus className="w-4 h-4" /> New Estimate
+              <Plus className="h-4 w-4" /> New Estimate
             </Link>
           </Button>
         </div>
@@ -64,13 +64,12 @@ export function AppSidebar({ user }: AppSidebarProps) {
           <SidebarMenu>
             {NAV_LINKS.map(({ href, label, icon: Icon }) => {
               const isActive =
-                pathname === href ||
-                (href !== "/dashboard" && pathname.startsWith(href));
+                pathname === href || (href !== "/dashboard" && pathname.startsWith(href));
               return (
                 <SidebarMenuItem key={href}>
                   <SidebarMenuButton asChild isActive={isActive} className="my-1">
                     <Link href={href}>
-                      <Icon className="w-4 h-4" />
+                      <Icon className="h-4 w-4" />
                       {label}
                     </Link>
                   </SidebarMenuButton>
@@ -82,14 +81,14 @@ export function AppSidebar({ user }: AppSidebarProps) {
       </SidebarContent>
 
       {/* User footer */}
-      <SidebarFooter className="border-t border-border p-3">
+      <SidebarFooter className="border-border border-t p-3">
         <div className="flex items-center gap-3">
           <Avatar size="sm">
             <AvatarFallback>{initials}</AvatarFallback>
           </Avatar>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium truncate">{user.name}</p>
-            <p className="text-xs text-muted-foreground capitalize truncate">
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-medium">{user.name}</p>
+            <p className="text-muted-foreground truncate text-xs capitalize">
               {user.role?.replace("_", " ")}
             </p>
           </div>
@@ -97,10 +96,10 @@ export function AppSidebar({ user }: AppSidebarProps) {
             variant="ghost"
             size="icon"
             onClick={() => signOut({ callbackUrl: "/login" })}
-            className="shrink-0 text-muted-foreground hover:text-foreground"
+            className="text-muted-foreground hover:text-foreground shrink-0"
             aria-label="Log out"
           >
-            <LogOut className="w-4 h-4" />
+            <LogOut className="h-4 w-4" />
           </Button>
         </div>
       </SidebarFooter>

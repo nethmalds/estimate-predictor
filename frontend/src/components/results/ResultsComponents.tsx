@@ -1,9 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
-} from "recharts";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import { ChevronUp, ChevronDown, AlertTriangle, Download } from "lucide-react";
 import * as XLSX from "xlsx";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -42,8 +40,16 @@ interface CostBreakdownProps {
 }
 
 const CHART_COLORS = [
-  "#3b82f6","#10b981","#f59e0b","#ef4444","#8b5cf6",
-  "#06b6d4","#ec4899","#84cc16","#f97316","#6366f1",
+  "#3b82f6",
+  "#10b981",
+  "#f59e0b",
+  "#ef4444",
+  "#8b5cf6",
+  "#06b6d4",
+  "#ec4899",
+  "#84cc16",
+  "#f97316",
+  "#6366f1",
 ];
 
 const MATCH_BADGE: Record<string, string> = {
@@ -122,7 +128,8 @@ function ConfidenceBreakdownCard({ confidence }: ConfidenceBreakdownProps) {
               <div key={k} className="flex justify-between text-xs">
                 <span className="text-muted-foreground">{k.replace(/_/g, " ")}</span>
                 <span className={v >= 0 ? "text-green-400" : "text-destructive"}>
-                  {v >= 0 ? "+" : ""}{(v * 100).toFixed(1)}%
+                  {v >= 0 ? "+" : ""}
+                  {(v * 100).toFixed(1)}%
                 </span>
               </div>
             ))}
@@ -130,7 +137,7 @@ function ConfidenceBreakdownCard({ confidence }: ConfidenceBreakdownProps) {
         )}
         {Object.keys(sectionBreakdown).length > 0 && (
           <div>
-            <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2">
+            <p className="text-muted-foreground mb-2 text-xs tracking-wide uppercase">
               Section confidence
             </p>
             <div className="space-y-2">
@@ -142,7 +149,14 @@ function ConfidenceBreakdownCard({ confidence }: ConfidenceBreakdownProps) {
                       <span className="text-muted-foreground">
                         {section.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
                       </span>
-                      <Badge variant="outline" className={pct >= 0.6 ? "text-green-400 border-green-500/25" : "text-yellow-400 border-yellow-500/25"}>
+                      <Badge
+                        variant="outline"
+                        className={
+                          pct >= 0.6
+                            ? "border-green-500/25 text-green-400"
+                            : "border-yellow-500/25 text-yellow-400"
+                        }
+                      >
                         {(pct * 100).toFixed(1)}%
                       </Badge>
                     </div>
@@ -161,7 +175,13 @@ function ConfidenceBreakdownCard({ confidence }: ConfidenceBreakdownProps) {
 type SortKey = "description" | "section" | "quantity" | "rate" | "cost";
 
 function SortIcon({ col, sortKey, sortAsc }: { col: SortKey; sortKey: SortKey; sortAsc: boolean }) {
-  return sortKey === col ? (sortAsc ? <ChevronUp className="w-3 h-3 inline" /> : <ChevronDown className="w-3 h-3 inline" />) : null;
+  return sortKey === col ? (
+    sortAsc ? (
+      <ChevronUp className="inline h-3 w-3" />
+    ) : (
+      <ChevronDown className="inline h-3 w-3" />
+    )
+  ) : null;
 }
 
 interface FullBoqTableProps {
@@ -178,10 +198,11 @@ function FullBoqTable({ items, grandTotal }: FullBoqTableProps) {
 
   const filtered = useMemo(() => {
     const q = filter.toLowerCase();
-    return items.filter((it) =>
-      !q ||
-      (it.description ?? it.bsr_description ?? "").toLowerCase().includes(q) ||
-      (it.section ?? it.category ?? "").toLowerCase().includes(q)
+    return items.filter(
+      (it) =>
+        !q ||
+        (it.description ?? it.bsr_description ?? "").toLowerCase().includes(q) ||
+        (it.section ?? it.category ?? "").toLowerCase().includes(q)
     );
   }, [items, filter]);
 
@@ -189,12 +210,24 @@ function FullBoqTable({ items, grandTotal }: FullBoqTableProps) {
     return [...filtered].sort((a, b) => {
       let av: string | number = "";
       let bv: string | number = "";
-      if (sortKey === "description") { av = a.description ?? a.bsr_description ?? ""; bv = b.description ?? b.bsr_description ?? ""; }
-      else if (sortKey === "section") { av = a.section ?? a.category ?? ""; bv = b.section ?? b.category ?? ""; }
-      else if (sortKey === "quantity") { av = a.quantity ?? 0; bv = b.quantity ?? 0; }
-      else if (sortKey === "rate") { av = a.rate ?? 0; bv = b.rate ?? 0; }
-      else if (sortKey === "cost") { av = a.cost ?? 0; bv = b.cost ?? 0; }
-      if (typeof av === "string") return sortAsc ? av.localeCompare(bv as string) : (bv as string).localeCompare(av);
+      if (sortKey === "description") {
+        av = a.description ?? a.bsr_description ?? "";
+        bv = b.description ?? b.bsr_description ?? "";
+      } else if (sortKey === "section") {
+        av = a.section ?? a.category ?? "";
+        bv = b.section ?? b.category ?? "";
+      } else if (sortKey === "quantity") {
+        av = a.quantity ?? 0;
+        bv = b.quantity ?? 0;
+      } else if (sortKey === "rate") {
+        av = a.rate ?? 0;
+        bv = b.rate ?? 0;
+      } else if (sortKey === "cost") {
+        av = a.cost ?? 0;
+        bv = b.cost ?? 0;
+      }
+      if (typeof av === "string")
+        return sortAsc ? av.localeCompare(bv as string) : (bv as string).localeCompare(av);
       return sortAsc ? (av as number) - (bv as number) : (bv as number) - (av as number);
     });
   }, [filtered, sortKey, sortAsc]);
@@ -204,7 +237,10 @@ function FullBoqTable({ items, grandTotal }: FullBoqTableProps) {
 
   const handleSort = (key: SortKey) => {
     if (key === sortKey) setSortAsc((a) => !a);
-    else { setSortKey(key); setSortAsc(true); }
+    else {
+      setSortKey(key);
+      setSortAsc(true);
+    }
     setPage(1);
   };
 
@@ -216,7 +252,10 @@ function FullBoqTable({ items, grandTotal }: FullBoqTableProps) {
           type="text"
           placeholder="Filter by description or section..."
           value={filter}
-          onChange={(e) => { setFilter(e.target.value); setPage(1); }}
+          onChange={(e) => {
+            setFilter(e.target.value);
+            setPage(1);
+          }}
           className="max-w-xs text-xs"
         />
       </CardHeader>
@@ -226,20 +265,35 @@ function FullBoqTable({ items, grandTotal }: FullBoqTableProps) {
             <TableHeader>
               <TableRow>
                 <TableHead className="w-8">#</TableHead>
-                <TableHead className="cursor-pointer select-none whitespace-nowrap" onClick={() => handleSort("section")}>
+                <TableHead
+                  className="cursor-pointer whitespace-nowrap select-none"
+                  onClick={() => handleSort("section")}
+                >
                   Section <SortIcon col="section" sortKey={sortKey} sortAsc={sortAsc} />
                 </TableHead>
-                <TableHead className="cursor-pointer select-none" onClick={() => handleSort("description")}>
+                <TableHead
+                  className="cursor-pointer select-none"
+                  onClick={() => handleSort("description")}
+                >
                   Description <SortIcon col="description" sortKey={sortKey} sortAsc={sortAsc} />
                 </TableHead>
                 <TableHead className="text-right">Unit</TableHead>
-                <TableHead className="text-right cursor-pointer select-none" onClick={() => handleSort("quantity")}>
+                <TableHead
+                  className="cursor-pointer text-right select-none"
+                  onClick={() => handleSort("quantity")}
+                >
                   Qty <SortIcon col="quantity" sortKey={sortKey} sortAsc={sortAsc} />
                 </TableHead>
-                <TableHead className="text-right cursor-pointer select-none whitespace-nowrap" onClick={() => handleSort("rate")}>
+                <TableHead
+                  className="cursor-pointer text-right whitespace-nowrap select-none"
+                  onClick={() => handleSort("rate")}
+                >
                   Rate (LKR) <SortIcon col="rate" sortKey={sortKey} sortAsc={sortAsc} />
                 </TableHead>
-                <TableHead className="text-right cursor-pointer select-none whitespace-nowrap" onClick={() => handleSort("cost")}>
+                <TableHead
+                  className="cursor-pointer text-right whitespace-nowrap select-none"
+                  onClick={() => handleSort("cost")}
+                >
                   Cost (LKR) <SortIcon col="cost" sortKey={sortKey} sortAsc={sortAsc} />
                 </TableHead>
                 <TableHead className="text-right">Match</TableHead>
@@ -253,8 +307,7 @@ function FullBoqTable({ items, grandTotal }: FullBoqTableProps) {
                   <TableRow
                     key={i}
                     className={
-                      isNoMatch ? "bg-destructive/5" :
-                      needsReview ? "bg-yellow-500/5" : ""
+                      isNoMatch ? "bg-destructive/5" : needsReview ? "bg-yellow-500/5" : ""
                     }
                   >
                     <TableCell className="text-muted-foreground text-xs">
@@ -266,26 +319,32 @@ function FullBoqTable({ items, grandTotal }: FullBoqTableProps) {
                     <TableCell className="max-w-xs text-xs">
                       <div className="flex items-start gap-1">
                         {(isNoMatch || needsReview) && (
-                          <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0 text-yellow-400" />
+                          <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-yellow-400" />
                         )}
-                        <span className="whitespace-normal break-words">
+                        <span className="break-words whitespace-normal">
                           {item.description ?? item.bsr_description ?? "—"}
                         </span>
                       </div>
                       {item.bsr_item_no && (
-                        <div className="text-muted-foreground/60 text-[10px] mt-0.5 whitespace-normal break-words">
+                        <div className="text-muted-foreground/60 mt-0.5 text-[10px] break-words whitespace-normal">
                           {item.bsr_item_no}
                         </div>
                       )}
                     </TableCell>
                     <TableCell className="text-right text-xs">{item.unit ?? "—"}</TableCell>
-                    <TableCell className="text-right text-xs">{item.quantity?.toFixed(2) ?? "—"}</TableCell>
-                    <TableCell className="text-right text-xs">{item.rate?.toLocaleString() ?? "—"}</TableCell>
-                    <TableCell className="text-right text-xs font-medium">{item.cost?.toLocaleString() ?? "—"}</TableCell>
+                    <TableCell className="text-right text-xs">
+                      {item.quantity?.toFixed(2) ?? "—"}
+                    </TableCell>
+                    <TableCell className="text-right text-xs">
+                      {item.rate?.toLocaleString() ?? "—"}
+                    </TableCell>
+                    <TableCell className="text-right text-xs font-medium">
+                      {item.cost?.toLocaleString() ?? "—"}
+                    </TableCell>
                     <TableCell className="text-right">
                       <Badge
                         variant="outline"
-                        className={`text-[10px] px-1.5 py-0.5 ${MATCH_BADGE[item.match_type ?? "no_match"] ?? MATCH_BADGE.no_match}`}
+                        className={`px-1.5 py-0.5 text-[10px] ${MATCH_BADGE[item.match_type ?? "no_match"] ?? MATCH_BADGE.no_match}`}
                       >
                         {item.match_type === "confirmed" && item.match_confidence != null
                           ? `${(item.match_confidence * 100).toFixed(0)}%`
@@ -299,10 +358,10 @@ function FullBoqTable({ items, grandTotal }: FullBoqTableProps) {
             {page === totalPages && (
               <TableFooter>
                 <TableRow>
-                  <TableCell colSpan={6} className="font-semibold text-xs">
+                  <TableCell colSpan={6} className="text-xs font-semibold">
                     Grand Total (incl. contingencies)
                   </TableCell>
-                  <TableCell className="text-right font-semibold text-xs">
+                  <TableCell className="text-right text-xs font-semibold">
                     LKR {grandTotal.toLocaleString()}
                   </TableCell>
                   <TableCell />
@@ -312,8 +371,10 @@ function FullBoqTable({ items, grandTotal }: FullBoqTableProps) {
           </Table>
         </div>
         {totalPages > 1 && (
-          <div className="px-4 py-3 border-t border-border flex items-center justify-between text-xs text-muted-foreground">
-            <span>{filtered.length} items, page {page} of {totalPages}</span>
+          <div className="border-border text-muted-foreground flex items-center justify-between border-t px-4 py-3 text-xs">
+            <span>
+              {filtered.length} items, page {page} of {totalPages}
+            </span>
             <div className="flex gap-2">
               <Button
                 variant="outline"
@@ -346,40 +407,54 @@ export type { BoqItem };
 export function generateExcelReport(data: Record<string, unknown>): ArrayBuffer {
   const wb = XLSX.utils.book_new();
   const projectInfo = (data.project_info as Record<string, unknown>) ?? {};
-  const parameters  = (projectInfo.parameters as Record<string, unknown>) ?? {};
-  const costs       = (data.costs as Record<string, unknown>) ?? {};
-  const confidence  = (data.confidence as Record<string, unknown>) ?? {};
-  const boqItems    = (data.boq_items as Record<string, unknown>[]) ?? [];
+  const parameters = (projectInfo.parameters as Record<string, unknown>) ?? {};
+  const costs = (data.costs as Record<string, unknown>) ?? {};
+  const confidence = (data.confidence as Record<string, unknown>) ?? {};
+  const boqItems = (data.boq_items as Record<string, unknown>[]) ?? [];
 
   // Summary
   const summaryRows: unknown[][] = [
-    ["CONSTRUCTION COST ESTIMATION REPORT"], [],
+    ["CONSTRUCTION COST ESTIMATION REPORT"],
+    [],
     ["PROJECT DETAILS", ""],
-    ["Building Type",    projectInfo.building_type ?? "—"],
+    ["Building Type", projectInfo.building_type ?? "—"],
     ["Number of Floors", projectInfo.floors ?? "—"],
-    ["Built-up Area",    parameters.built_up_area ?? "—"],
-    ["Finish Level",     parameters.finish_level ?? "—"],
-    ["Roof Type",        parameters.roof_type ?? "—"],
-    ["Ceiling Type",     parameters.ceiling_type ?? "—"],
-    ["Location",         parameters.location ?? "—"],
+    ["Built-up Area", parameters.built_up_area ?? "—"],
+    ["Finish Level", parameters.finish_level ?? "—"],
+    ["Roof Type", parameters.roof_type ?? "—"],
+    ["Ceiling Type", parameters.ceiling_type ?? "—"],
+    ["Location", parameters.location ?? "—"],
     [],
     ["COST SUMMARY", ""],
-    ["Base Total (LKR)",           costs.base_total ?? 0],
+    ["Base Total (LKR)", costs.base_total ?? 0],
     ["External Works Total (LKR)", costs.external_works_total ?? 0],
-    ["Preliminaries",              costs.preliminaries ?? 0],
-    ["Contingencies",              costs.contingencies ?? 0],
-    ["Grand Total (LKR)",          costs.total ?? 0],
+    ["Preliminaries", costs.preliminaries ?? 0],
+    ["Contingencies", costs.contingencies ?? 0],
+    ["Grand Total (LKR)", costs.total ?? 0],
     [],
     ["ESTIMATE QUALITY", ""],
-    ["Confidence Score", String(((Number((confidence as Record<string,unknown>).score) || 0) * 100).toFixed(1)) + "%"],
-    ["Total BOQ Items",  boqItems.length],
+    [
+      "Confidence Score",
+      String(((Number((confidence as Record<string, unknown>).score) || 0) * 100).toFixed(1)) + "%",
+    ],
+    ["Total BOQ Items", boqItems.length],
   ];
   const summarySheet = XLSX.utils.aoa_to_sheet(summaryRows);
   summarySheet["!cols"] = [{ wch: 30 }, { wch: 42 }];
   XLSX.utils.book_append_sheet(wb, summarySheet, "Summary");
 
   // BOQ
-  const boqHeaders = ["No.","Description","Category","Unit","Quantity","Rate (LKR)","Cost (LKR)","BSR Code","Match %"];
+  const boqHeaders = [
+    "No.",
+    "Description",
+    "Category",
+    "Unit",
+    "Quantity",
+    "Rate (LKR)",
+    "Cost (LKR)",
+    "BSR Code",
+    "Match %",
+  ];
   const boqRows: unknown[][] = [boqHeaders];
   for (let i = 0; i < boqItems.length; i++) {
     const item = boqItems[i];
@@ -397,19 +472,45 @@ export function generateExcelReport(data: Record<string, unknown>): ArrayBuffer 
     ]);
   }
   boqRows.push([]);
-  boqRows.push(["","","","","","GRAND TOTAL (incl. 5% Contingencies)", costs.total ?? 0,"",""]);
+  boqRows.push([
+    "",
+    "",
+    "",
+    "",
+    "",
+    "GRAND TOTAL (incl. 5% Contingencies)",
+    costs.total ?? 0,
+    "",
+    "",
+  ]);
   const boqSheet = XLSX.utils.aoa_to_sheet(boqRows);
-  boqSheet["!cols"] = [{wch:6},{wch:48},{wch:26},{wch:10},{wch:12},{wch:16},{wch:16},{wch:18},{wch:10}];
+  boqSheet["!cols"] = [
+    { wch: 6 },
+    { wch: 48 },
+    { wch: 26 },
+    { wch: 10 },
+    { wch: 12 },
+    { wch: 16 },
+    { wch: 16 },
+    { wch: 18 },
+    { wch: 10 },
+  ];
   boqSheet["!freeze"] = { xSplit: 0, ySplit: 1 };
   XLSX.utils.book_append_sheet(wb, boqSheet, "Bill of Quantities");
 
   // Cost Breakdown
   const subtotals = (costs.subtotals as Record<string, number>) ?? {};
   const baseTotal = (costs.base_total as number) || 1;
-  const breakdownRows: unknown[][] = [["Category","Subtotal (LKR)","% of Base Total"]];
-  Object.entries(subtotals).sort(([,a],[,b]) => b-a).forEach(([cat, amount]) => {
-    breakdownRows.push([cat.replace(/_/g," ").replace(/\b\w/g,(c)=>c.toUpperCase()), amount, String(((amount/baseTotal)*100).toFixed(1))+"%"]);
-  });
+  const breakdownRows: unknown[][] = [["Category", "Subtotal (LKR)", "% of Base Total"]];
+  Object.entries(subtotals)
+    .sort(([, a], [, b]) => b - a)
+    .forEach(([cat, amount]) => {
+      breakdownRows.push([
+        cat.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
+        amount,
+        String(((amount / baseTotal) * 100).toFixed(1)) + "%",
+      ]);
+    });
   breakdownRows.push([]);
   breakdownRows.push(["Base Total", costs.base_total ?? 0, "100%"]);
   breakdownRows.push(["External Works Subtotal", costs.external_works_total ?? 0, ""]);
@@ -417,11 +518,20 @@ export function generateExcelReport(data: Record<string, unknown>): ArrayBuffer 
   breakdownRows.push(["Contingencies", costs.contingencies ?? 0, ""]);
   breakdownRows.push(["Grand Total", costs.total ?? 0, ""]);
   const breakdownSheet = XLSX.utils.aoa_to_sheet(breakdownRows);
-  breakdownSheet["!cols"] = [{wch:36},{wch:20},{wch:16}];
+  breakdownSheet["!cols"] = [{ wch: 36 }, { wch: 20 }, { wch: 16 }];
   XLSX.utils.book_append_sheet(wb, breakdownSheet, "Cost Breakdown");
 
   // Audit sheet
-  const auditHeaders = ["No.","Description","Match Type","Match Confidence","Qty Source","Qty Confidence","Needs Rate Review","Warnings"];
+  const auditHeaders = [
+    "No.",
+    "Description",
+    "Match Type",
+    "Match Confidence",
+    "Qty Source",
+    "Qty Confidence",
+    "Needs Rate Review",
+    "Warnings",
+  ];
   const auditRows: unknown[][] = [auditHeaders];
   for (let i = 0; i < boqItems.length; i++) {
     const item = boqItems[i];
@@ -429,15 +539,28 @@ export function generateExcelReport(data: Record<string, unknown>): ArrayBuffer 
       i + 1,
       item.description || item.bsr_description || "—",
       item.match_type || "—",
-      item.match_confidence != null ? String(((item.match_confidence as number)*100).toFixed(0))+"%": "—",
+      item.match_confidence != null
+        ? String(((item.match_confidence as number) * 100).toFixed(0)) + "%"
+        : "—",
       item.quantity_source || "—",
-      item.quantity_confidence_score != null ? String(((item.quantity_confidence_score as number)*100).toFixed(0))+"%": "—",
+      item.quantity_confidence_score != null
+        ? String(((item.quantity_confidence_score as number) * 100).toFixed(0)) + "%"
+        : "—",
       item.needs_rate_review ? "YES" : "no",
       (item.warnings as string[] | undefined)?.join("; ") ?? "",
     ]);
   }
   const auditSheet = XLSX.utils.aoa_to_sheet(auditRows);
-  auditSheet["!cols"] = [{wch:6},{wch:48},{wch:14},{wch:16},{wch:16},{wch:16},{wch:18},{wch:40}];
+  auditSheet["!cols"] = [
+    { wch: 6 },
+    { wch: 48 },
+    { wch: 14 },
+    { wch: 16 },
+    { wch: 16 },
+    { wch: 16 },
+    { wch: 18 },
+    { wch: 40 },
+  ];
   auditSheet["!freeze"] = { xSplit: 0, ySplit: 1 };
   XLSX.utils.book_append_sheet(wb, auditSheet, "Audit");
 
@@ -446,7 +569,9 @@ export function generateExcelReport(data: Record<string, unknown>): ArrayBuffer 
 
 export function downloadExcelBlob(data: Record<string, unknown>): void {
   const buffer = generateExcelReport(data);
-  const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  const blob = new Blob([buffer], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -472,7 +597,7 @@ export function ResultsActions({ estimateData, excelUrl, onNewEstimate }: Result
   return (
     <div className="flex gap-3">
       <Button onClick={handleDownload}>
-        <Download className="w-4 h-4" /> Download Excel Report
+        <Download className="h-4 w-4" /> Download Excel Report
       </Button>
       <Button variant="outline" onClick={onNewEstimate}>
         New Estimate

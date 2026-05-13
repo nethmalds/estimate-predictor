@@ -1,0 +1,34 @@
+# NEW: Excludes files that should not be baked into the production Docker image.
+
+# Python runtime artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+.pytest_cache/
+
+# Virtual environment — image uses pip-installed packages from requirements.txt
+.venv/
+venv/
+env/
+
+# Secrets — injected at runtime via docker-compose env, never baked in
+.env
+.env.*
+
+# User-uploaded files — mounted as volume at runtime (./backend/infrastructure/data_layer/storage)
+infrastructure/data_layer/storage/uploads/
+
+# Test suite — not needed in the production image
+tests/
+
+# Dev tooling
+.vscode/
+.idea/
+*.log
+.DS_Store
+Thumbs.db
+
+# Dev compose stays out of the production build context
+docker/docker-compose.yml

@@ -4,21 +4,18 @@ import { Button } from "@/components/ui/button";
 
 export default function Navbar() {
   return (
-    <header className="fixed top-0 inset-x-0 z-50">
+    <header className="fixed inset-x-0 top-0 z-50">
       {/* Glass backdrop */}
-      <div className="absolute inset-0 bg-zinc-950/80 backdrop-blur-md border-b border-zinc-800/60" />
+      <div className="absolute inset-0 border-b border-zinc-800/60 bg-zinc-950/80 backdrop-blur-md" />
 
       {/* Content */}
-      <nav className="relative max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+      <nav className="relative mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
         {/* Logo */}
-        <Link
-          href="/"
-          className="flex items-center gap-2 group"
-        >
-          <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 group-hover:bg-blue-500/15 group-hover:border-blue-500/30 transition-all duration-200">
-            <Building2 className="w-4 h-4 text-blue-400" />
+        <Link href="/" className="group flex items-center gap-2">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-blue-500/20 bg-blue-500/10 transition-all duration-200 group-hover:border-blue-500/30 group-hover:bg-blue-500/15">
+            <Building2 className="h-4 w-4 text-blue-400" />
           </div>
-          <span className="font-bold text-base tracking-tight text-zinc-100">
+          <span className="text-base font-bold tracking-tight text-zinc-100">
             CostEstimate<span className="text-blue-400">AI</span>
           </span>
         </Link>
@@ -29,14 +26,14 @@ export default function Navbar() {
             variant="ghost"
             size="sm"
             asChild
-            className="text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/60 transition-all duration-200"
+            className="text-zinc-400 transition-all duration-200 hover:bg-zinc-800/60 hover:text-zinc-100"
           >
             <Link href="/login">Sign in</Link>
           </Button>
           <Button
             size="sm"
             asChild
-            className="bg-blue-600 hover:bg-blue-500 text-white shadow-md shadow-blue-600/25 hover:shadow-blue-500/30 hover:-translate-y-0.5 transition-all duration-200 rounded-lg"
+            className="rounded-lg bg-blue-600 text-white shadow-md shadow-blue-600/25 transition-all duration-200 hover:-translate-y-0.5 hover:bg-blue-500 hover:shadow-blue-500/30"
           >
             <Link href="/register">Get started</Link>
           </Button>

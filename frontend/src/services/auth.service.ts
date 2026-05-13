@@ -14,14 +14,16 @@ import type {
   RegisterResponse,
   ResetPasswordRequest,
   ResetPasswordResponse,
+  // NEW: H11
+  ResendVerificationRequest,
+  ResendVerificationResponse,
+  VerifyEmailResponse,
 } from "@/types/auth";
 
 /**
  * Register a new user account.
  */
-export async function register(
-  payload: RegisterRequest
-): Promise<RegisterResponse> {
+export async function register(payload: RegisterRequest): Promise<RegisterResponse> {
   return apiClient.post<RegisterResponse>("/api/users/register", payload);
 }
 
@@ -32,20 +34,33 @@ export async function register(
 export async function forgotPassword(
   payload: ForgotPasswordRequest
 ): Promise<ForgotPasswordResponse> {
-  return apiClient.post<ForgotPasswordResponse>(
-    "/api/auth/forgot-password",
-    payload
-  );
+  return apiClient.post<ForgotPasswordResponse>("/api/auth/forgot-password", payload);
 }
 
 /**
  * Submit a password reset using the token from the reset email.
  */
-export async function resetPassword(
-  payload: ResetPasswordRequest
-): Promise<ResetPasswordResponse> {
-  return apiClient.post<ResetPasswordResponse>(
-    "/api/auth/reset-password",
-    payload
+export async function resetPassword(payload: ResetPasswordRequest): Promise<ResetPasswordResponse> {
+  return apiClient.post<ResetPasswordResponse>("/api/auth/reset-password", payload);
+}
+
+// NEW: H11 — email verification helpers
+
+/**
+ * Consume a single-use verification token from the email link.
+ */
+export async function verifyEmail(token: string): Promise<VerifyEmailResponse> {
+  return apiClient.get<VerifyEmailResponse>(
+    `/api/auth/verify-email?token=${encodeURIComponent(token)}`
   );
+}
+
+/**
+ * Request a new verification email.
+ * Always returns 200 (backend prevents user enumeration).
+ */
+export async function resendVerification(
+  payload: ResendVerificationRequest
+): Promise<ResendVerificationResponse> {
+  return apiClient.post<ResendVerificationResponse>("/api/auth/resend-verification", payload);
 }

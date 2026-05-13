@@ -94,3 +94,29 @@ class UserRepository:
     def mark_token_used(self, record: PasswordResetToken) -> None:
         record.used = True
         self._db.commit()
+
+    # NEW: H11 — email verification helpers ──────────────────────────────────
+
+    def find_by_verification_token(self, token_hash: str) -> Optional[User]:
+        """Return the user whose verification_token matches the given hash."""
+        return (
+            self._db.query(User)
+            .filter(User.verification_token == token_hash)
+            .first()
+        )
+
+    def set_verification_token(
+        self,
+        user: User,
+        token_hash: str | None,
+        sent_at: datetime | None,
+    ) -> None:
+        user.verification_token = token_hash
+        user.verification_sent_at = sent_at
+        self._db.commit()
+
+    def mark_verified(self, user: User) -> None:
+        user.is_verified = True
+        user.verification_token = None
+        user.verification_sent_at = None
+        self._db.commit()

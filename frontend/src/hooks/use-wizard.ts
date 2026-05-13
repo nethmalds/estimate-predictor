@@ -38,10 +38,7 @@ export function useWizardSubmit({ token, onComplete, onError }: UseWizardSubmitO
       setStatus("submitting");
 
       try {
-        const { session_id, estimate_id } = await submitWizardForm(
-          payload,
-          token
-        );
+        const { session_id, estimate_id } = await submitWizardForm(payload, token);
 
         setSession(session_id, estimate_id ?? "");
 
@@ -67,7 +64,11 @@ export function useWizardSubmit({ token, onComplete, onError }: UseWizardSubmitO
 
         es.addEventListener("error", (e: MessageEvent) => {
           let data: Record<string, unknown> = {};
-          try { data = JSON.parse(e.data); } catch { /* non-data error event */ }
+          try {
+            data = JSON.parse(e.data);
+          } catch {
+            /* non-data error event */
+          }
           const event: StreamEvent = { event: "error", data };
           appendEvent(event);
           setStatus("error");

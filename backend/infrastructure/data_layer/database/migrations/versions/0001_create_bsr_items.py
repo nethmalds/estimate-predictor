@@ -1,18 +1,15 @@
 """create bsr_items table
 
 Revision ID: 0001
-Revises: 
+Revises:
 Create Date: 2026-03-22
-
 """
-
 from __future__ import annotations
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import postgresql
 
-# revision identifiers, used by Alembic.
 revision = "0001"
 down_revision = None
 branch_labels = None
@@ -20,11 +17,6 @@ depends_on = None
 
 
 def upgrade() -> None:
-    bind = op.get_bind()
-    inspector = sa.inspect(bind)
-    if "bsr_items" in inspector.get_table_names():
-        return
-
     op.create_table(
         "bsr_items",
         sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True, nullable=False),
@@ -40,7 +32,6 @@ def upgrade() -> None:
         sa.Column("metadata", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
         sa.UniqueConstraint("item_no", name="uq_bsr_items_item_no"),
     )
-
     op.create_index("ix_bsr_items_item_no", "bsr_items", ["item_no"], unique=False)
     op.create_index("ix_bsr_items_category", "bsr_items", ["category"], unique=False)
     op.create_index("ix_bsr_items_work_type", "bsr_items", ["work_type"], unique=False)

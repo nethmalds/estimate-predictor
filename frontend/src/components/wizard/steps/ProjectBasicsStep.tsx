@@ -1,9 +1,22 @@
 "use client";
 
 import { BuildingType, ProjectBasics } from "@/types/wizard";
-import { Building2, Factory, Layers, Home, UploadCloud, X, FileText, ImageIcon, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import {
+  Building2,
+  Factory,
+  Layers,
+  Home,
+  UploadCloud,
+  X,
+  FileText,
+  ImageIcon,
+  Loader2,
+  CheckCircle2,
+  AlertCircle,
+} from "lucide-react";
 import { useUploadThing } from "@/lib/uploadthing";
 import { useState, useCallback, useRef } from "react";
+import Image from "next/image";
 
 interface Props {
   data: ProjectBasics;
@@ -11,10 +24,30 @@ interface Props {
   errors: Record<string, string>;
 }
 
-const BUILDING_TYPES: { value: BuildingType; label: string; icon: React.ReactNode; description: string }[] = [
-  { value: "residential", label: "Residential", icon: <Home className="w-6 h-6" />, description: "Houses, apartments, villas" },
-  { value: "commercial",  label: "Commercial",  icon: <Building2 className="w-6 h-6" />, description: "Offices, shops, hotels" },
-  { value: "industrial",  label: "Industrial",  icon: <Factory className="w-6 h-6" />, description: "Factories, warehouses" },
+const BUILDING_TYPES: {
+  value: BuildingType;
+  label: string;
+  icon: React.ReactNode;
+  description: string;
+}[] = [
+  {
+    value: "residential",
+    label: "Residential",
+    icon: <Home className="h-6 w-6" />,
+    description: "Houses, apartments, villas",
+  },
+  {
+    value: "commercial",
+    label: "Commercial",
+    icon: <Building2 className="h-6 w-6" />,
+    description: "Offices, shops, hotels",
+  },
+  {
+    value: "industrial",
+    label: "Industrial",
+    icon: <Factory className="h-6 w-6" />,
+    description: "Factories, warehouses",
+  },
 ];
 
 interface FileEntry {
@@ -22,7 +55,7 @@ interface FileEntry {
   file: File;
   status: "pending" | "uploading" | "done" | "error";
   url?: string;
-  fileKey?: string;   // UploadThing key extracted from ufsUrl – needed for deletion
+  fileKey?: string; // UploadThing key extracted from ufsUrl – needed for deletion
   previewUrl?: string;
 }
 
@@ -56,9 +89,7 @@ export function ProjectBasicsStep({ data, onChange, errors }: Props) {
 
       // Mark all as uploading
       setFileEntries((prev) =>
-        prev.map((e) =>
-          toUpload.find((u) => u.id === e.id) ? { ...e, status: "uploading" } : e
-        )
+        prev.map((e) => (toUpload.find((u) => u.id === e.id) ? { ...e, status: "uploading" } : e))
       );
 
       try {
@@ -102,10 +133,7 @@ export function ProjectBasicsStep({ data, onChange, errors }: Props) {
   const addFiles = useCallback(
     (files: FileList | File[]) => {
       const arr = Array.from(files);
-      const valid = arr.filter(
-        (f) =>
-          f.type.startsWith("image/") || f.type === "application/pdf"
-      );
+      const valid = arr.filter((f) => f.type.startsWith("image/") || f.type === "application/pdf");
       if (!valid.length) return;
 
       const newEntries: FileEntry[] = valid.map((f) => ({
@@ -179,7 +207,7 @@ export function ProjectBasicsStep({ data, onChange, errors }: Props) {
     <div className="space-y-8">
       {/* Building Type */}
       <div>
-        <label className="block text-sm font-medium text-foreground mb-3">
+        <label className="text-foreground mb-3 block text-sm font-medium">
           Building Type <span className="text-destructive">*</span>
         </label>
         <div className="grid grid-cols-2 gap-3">
@@ -188,30 +216,34 @@ export function ProjectBasicsStep({ data, onChange, errors }: Props) {
               key={bt.value}
               type="button"
               onClick={() => onChange({ ...data, building_type: bt.value })}
-              className={`flex items-start gap-3 p-4 rounded-lg border text-left transition-all ${
+              className={`flex items-start gap-3 rounded-lg border p-4 text-left transition-all ${
                 data.building_type === bt.value
-                  ? "border-blue-500 bg-blue-50 text-foreground shadow-sm"
+                  ? "text-foreground border-blue-500 bg-blue-50 shadow-sm"
                   : "border-border bg-card text-foreground hover:border-primary/40 hover:bg-accent/30"
               }`}
             >
-              <span className={data.building_type === bt.value ? "text-blue-500" : "text-muted-foreground"}>
+              <span
+                className={
+                  data.building_type === bt.value ? "text-blue-500" : "text-muted-foreground"
+                }
+              >
                 {bt.icon}
               </span>
               <div>
-                <div className="font-medium text-sm">{bt.label}</div>
-                <div className="text-xs text-muted-foreground mt-0.5">{bt.description}</div>
+                <div className="text-sm font-medium">{bt.label}</div>
+                <div className="text-muted-foreground mt-0.5 text-xs">{bt.description}</div>
               </div>
             </button>
           ))}
         </div>
         {errors.building_type && (
-          <p className="mt-1 text-xs text-destructive">{errors.building_type}</p>
+          <p className="text-destructive mt-1 text-xs">{errors.building_type}</p>
         )}
       </div>
 
       {/* Floor Count */}
       <div>
-        <label className="block text-sm font-medium text-foreground mb-2">
+        <label className="text-foreground mb-2 block text-sm font-medium">
           Number of Floors <span className="text-destructive">*</span>
         </label>
         <input
@@ -219,18 +251,23 @@ export function ProjectBasicsStep({ data, onChange, errors }: Props) {
           min={1}
           max={100}
           value={data.floor_count}
-          onChange={(e) => onChange({ ...data, floor_count: e.target.value === "" ? "" : parseInt(e.target.value) })}
+          onChange={(e) =>
+            onChange({
+              ...data,
+              floor_count: e.target.value === "" ? "" : parseInt(e.target.value),
+            })
+          }
           placeholder="e.g. 2"
-          className="w-32 bg-background border border-input text-foreground rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring"
+          className="bg-background border-input text-foreground focus:ring-ring w-32 rounded-lg border px-3 py-2 focus:ring-2 focus:outline-none"
         />
         {errors.floor_count && (
-          <p className="mt-1 text-xs text-destructive">{errors.floor_count}</p>
+          <p className="text-destructive mt-1 text-xs">{errors.floor_count}</p>
         )}
       </div>
 
       {/* Description */}
       <div>
-        <label className="block text-sm font-medium text-foreground mb-2">
+        <label className="text-foreground mb-2 block text-sm font-medium">
           Project Description <span className="text-muted-foreground text-xs">(optional)</span>
         </label>
         <textarea
@@ -238,15 +275,17 @@ export function ProjectBasicsStep({ data, onChange, errors }: Props) {
           onChange={(e) => onChange({ ...data, description: e.target.value })}
           placeholder="Brief description of the project..."
           rows={3}
-          className="w-full bg-background border border-input text-foreground rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring resize-none placeholder:text-muted-foreground"
+          className="bg-background border-input text-foreground focus:ring-ring placeholder:text-muted-foreground w-full resize-none rounded-lg border px-3 py-2 focus:ring-2 focus:outline-none"
         />
       </div>
 
       {/* Floorplan Upload — drag-and-drop multi-file */}
       <div>
-        <label className="block text-sm font-medium text-foreground mb-2">
+        <label className="text-foreground mb-2 block text-sm font-medium">
           Floor Plan Documents{" "}
-          <span className="text-muted-foreground text-xs">(optional · images &amp; PDFs · up to 10)</span>
+          <span className="text-muted-foreground text-xs">
+            (optional · images &amp; PDFs · up to 10)
+          </span>
         </label>
 
         {/* Drop Zone */}
@@ -255,9 +294,9 @@ export function ProjectBasicsStep({ data, onChange, errors }: Props) {
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
           onClick={() => inputRef.current?.click()}
-          className={`relative flex flex-col items-center justify-center gap-2 p-6 rounded-xl border-2 border-dashed cursor-pointer transition-all select-none ${
+          className={`relative flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed p-6 transition-all select-none ${
             isDragging
-              ? "border-blue-400 bg-blue-500/10 scale-[1.01]"
+              ? "scale-[1.01] border-blue-400 bg-blue-500/10"
               : "border-border bg-muted/30 hover:border-primary/40 hover:bg-muted/50"
           }`}
         >
@@ -270,12 +309,14 @@ export function ProjectBasicsStep({ data, onChange, errors }: Props) {
             className="hidden"
           />
           <UploadCloud
-            className={`w-8 h-8 transition-colors ${isDragging ? "text-blue-400" : "text-muted-foreground"}`}
+            className={`h-8 w-8 transition-colors ${isDragging ? "text-blue-400" : "text-muted-foreground"}`}
           />
-          <p className="text-sm font-medium text-foreground">
+          <p className="text-foreground text-sm font-medium">
             {isDragging ? "Drop files here" : "Drag & drop files, or click to browse"}
           </p>
-          <p className="text-xs text-muted-foreground">Supports PNG, JPG, WEBP, PDF — max 8 MB each</p>
+          <p className="text-muted-foreground text-xs">
+            Supports PNG, JPG, WEBP, PDF — max 8 MB each
+          </p>
         </div>
 
         {/* File List */}
@@ -284,48 +325,55 @@ export function ProjectBasicsStep({ data, onChange, errors }: Props) {
             {fileEntries.map((entry) => (
               <li
                 key={entry.id}
-                className="flex items-center gap-3 p-3 bg-muted/50 border border-border rounded-lg"
+                className="bg-muted/50 border-border flex items-center gap-3 rounded-lg border p-3"
               >
                 {/* Thumbnail or PDF icon */}
                 {entry.previewUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
+                  <Image
                     src={entry.previewUrl}
                     alt={entry.file.name}
-                    className="w-10 h-10 object-cover rounded-md shrink-0 border border-border"
+                    width={40}
+                    height={40}
+                    unoptimized
+                    className="border-border h-10 w-10 shrink-0 rounded-md border object-cover"
                   />
                 ) : (
-                  <div className="w-10 h-10 flex items-center justify-center rounded-md bg-muted shrink-0 border border-border">
-                    <FileText className="w-5 h-5 text-muted-foreground" />
+                  <div className="bg-muted border-border flex h-10 w-10 shrink-0 items-center justify-center rounded-md border">
+                    <FileText className="text-muted-foreground h-5 w-5" />
                   </div>
                 )}
 
                 {/* Info */}
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm text-foreground truncate font-medium">{entry.file.name}</p>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    <span className="text-xs text-muted-foreground">{fileSizeLabel(entry.file.size)}</span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-foreground truncate text-sm font-medium">{entry.file.name}</p>
+                  <div className="mt-0.5 flex items-center gap-2">
+                    <span className="text-muted-foreground text-xs">
+                      {fileSizeLabel(entry.file.size)}
+                    </span>
                     {entry.status === "uploading" && (
                       <span className="flex items-center gap-1 text-xs text-blue-500">
-                        <Loader2 className="w-3 h-3 animate-spin" /> Uploading…
+                        <Loader2 className="h-3 w-3 animate-spin" /> Uploading…
                       </span>
                     )}
                     {entry.status === "done" && (
                       <span className="flex items-center gap-1 text-xs text-emerald-500">
-                        <CheckCircle2 className="w-3 h-3" /> Uploaded
+                        <CheckCircle2 className="h-3 w-3" /> Uploaded
                       </span>
                     )}
                     {entry.status === "error" && (
                       <button
                         type="button"
-                        onClick={(e) => { e.stopPropagation(); retryFile(entry.id); }}
-                        className="flex items-center gap-1 text-xs text-destructive hover:text-destructive/80 transition-colors"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          retryFile(entry.id);
+                        }}
+                        className="text-destructive hover:text-destructive/80 flex items-center gap-1 text-xs transition-colors"
                       >
-                        <AlertCircle className="w-3 h-3" /> Failed — retry
+                        <AlertCircle className="h-3 w-3" /> Failed — retry
                       </button>
                     )}
                     {entry.status === "pending" && (
-                      <span className="text-xs text-muted-foreground">Queued…</span>
+                      <span className="text-muted-foreground text-xs">Queued…</span>
                     )}
                   </div>
                 </div>
@@ -333,20 +381,23 @@ export function ProjectBasicsStep({ data, onChange, errors }: Props) {
                 {/* File type badge */}
                 <div className="shrink-0">
                   {isImage(entry.file) ? (
-                    <ImageIcon className="w-4 h-4 text-muted-foreground" />
+                    <ImageIcon className="text-muted-foreground h-4 w-4" />
                   ) : (
-                    <FileText className="w-4 h-4 text-muted-foreground" />
+                    <FileText className="text-muted-foreground h-4 w-4" />
                   )}
                 </div>
 
                 {/* Delete */}
                 <button
                   type="button"
-                  onClick={(e) => { e.stopPropagation(); removeFile(entry.id); }}
-                  className="shrink-0 p-1 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    removeFile(entry.id);
+                  }}
+                  className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 shrink-0 rounded-md p-1 transition-colors"
                   title="Remove file"
                 >
-                  <X className="w-4 h-4" />
+                  <X className="h-4 w-4" />
                 </button>
               </li>
             ))}
