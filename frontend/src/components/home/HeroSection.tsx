@@ -20,7 +20,7 @@ export default function HeroSection() {
       </div>
 
       {/* Headline */}
-      <h1 className="mb-6 text-5xl leading-[1.1] font-extrabold tracking-tight text-zinc-100 sm:text-6xl">
+      <h1 className="mb-6 text-5xl leading-[1.1] font-extrabold tracking-tight text-zinc-900 sm:text-6xl">
         Generate Accurate BOQ Estimates{" "}
         <span className="bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">
           in Minutes
@@ -28,7 +28,7 @@ export default function HeroSection() {
       </h1>
 
       {/* Subheadline */}
-      <p className="mx-auto mb-10 max-w-2xl text-lg leading-relaxed text-zinc-400 sm:text-xl">
+      <p className="mx-auto mb-10 max-w-2xl text-lg leading-relaxed text-zinc-600 sm:text-xl">
         Describe your project and our AI generates a full Bill of Quantities matched against
         official BSR rates — no quantity surveyor required.
       </p>

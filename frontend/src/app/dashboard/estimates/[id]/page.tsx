@@ -52,19 +52,19 @@ export default async function EstimateDetailPage({ params }: { params: Promise<{
         variant="ghost"
         size="sm"
         asChild
-        className="mb-6 -ml-2 text-zinc-400 hover:text-zinc-100"
+        className="mb-6 -ml-2 text-zinc-500 hover:text-zinc-900"
       >
         <Link href="/dashboard/estimates">
           <ArrowLeft /> Back to Estimates
         </Link>
       </Button>
       <div className="border-border/60 mb-6 border-b pb-6">
-        <h1 className="text-2xl font-bold text-zinc-100">
+        <h1 className="text-2xl font-bold text-zinc-900">
           {estimate.project_name ?? "Untitled Project"}
         </h1>
-        <p className="mt-1 text-sm text-zinc-400">
+        <p className="mt-1 text-sm text-zinc-600">
           Created {new Date(estimate.created_at).toLocaleDateString()} ·{" "}
-          <span className="text-zinc-300 capitalize">{estimate.status.replace("_", " ")}</span>
+          <span className="text-zinc-700 capitalize">{estimate.status.replace("_", " ")}</span>
         </p>
       </div>
 

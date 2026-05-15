@@ -25,8 +25,8 @@ export default async function EstimatesPage() {
 
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-zinc-100">All Estimates</h1>
-          <p className="mt-1 text-sm text-zinc-400">Manage your construction cost estimates</p>
+          <h1 className="text-2xl font-bold text-zinc-900">All Estimates</h1>
+          <p className="mt-1 text-sm text-zinc-600">Manage your construction cost estimates</p>
         </div>
         <Button
           asChild

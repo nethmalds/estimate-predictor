@@ -107,6 +107,13 @@ function CostBreakdownChart({ subtotals }: CostBreakdownProps) {
   );
 }
 
+interface SectionStats {
+  item_count: number;
+  matched: number;
+  unmatched: number;
+  contractual: number;
+}
+
 interface ConfidenceBreakdownProps {
   confidence: Record<string, unknown>;
 }
@@ -114,7 +121,18 @@ interface ConfidenceBreakdownProps {
 function ConfidenceBreakdownCard({ confidence }: ConfidenceBreakdownProps) {
   const score = Number(confidence.score ?? 0);
   const breakdown = (confidence.breakdown as Record<string, number>) ?? {};
-  const sectionBreakdown = (confidence.section_breakdown as Record<string, number>) ?? {};
+  // section_breakdown comes from the backend as { [section]: { item_count, matched, unmatched, contractual } }
+  const rawSectionBreakdown = (confidence.section_breakdown as Record<string, SectionStats | number>) ?? {};
+  // Normalise: if value is already a plain number use it; otherwise derive matched/item_count ratio
+  const sectionBreakdown: Record<string, number> = Object.fromEntries(
+    Object.entries(rawSectionBreakdown).map(([k, v]) => {
+      if (typeof v === "number") return [k, v];
+      const stats = v as SectionStats;
+      const total = stats.item_count || 0;
+      const ratio = total > 0 ? (stats.matched + stats.contractual) / total : 0;
+      return [k, ratio];
+    })
+  );
 
   return (
     <Card className="mb-6">
@@ -141,8 +159,7 @@ function ConfidenceBreakdownCard({ confidence }: ConfidenceBreakdownProps) {
               Section confidence
             </p>
             <div className="space-y-2">
-              {Object.entries(sectionBreakdown).map(([section, sc]) => {
-                const pct = Number(sc);
+              {Object.entries(sectionBreakdown).map(([section, pct]) => {
                 return (
                   <div key={section} className="space-y-1">
                     <div className="flex justify-between text-xs">

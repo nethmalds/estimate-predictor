@@ -74,8 +74,8 @@ export default async function DashboardPage() {
 
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-zinc-100">Dashboard</h1>
-          <p className="mt-1 text-sm text-zinc-400">
+          <h1 className="text-2xl font-bold text-zinc-900">Dashboard</h1>
+          <p className="mt-1 text-sm text-zinc-600">
             Welcome back,{" "}
             <span className="bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text font-medium text-transparent">
               {session.user.name?.split(" ")[0]}
@@ -106,7 +106,7 @@ export default async function DashboardPage() {
               </CardAction>
             </CardHeader>
             <CardContent>
-              <p className="text-2xl font-bold text-zinc-100">{s.value}</p>
+              <p className="text-2xl font-bold text-zinc-900">{s.value}</p>
             </CardContent>
           </Card>
         ))}
@@ -115,7 +115,7 @@ export default async function DashboardPage() {
       {/* ── Recent estimates ── */}
       <Card className="border-border/60 bg-card/80 backdrop-blur-sm">
         <CardHeader>
-          <CardTitle className="text-zinc-100">Recent Estimates</CardTitle>
+          <CardTitle className="text-zinc-900">Recent Estimates</CardTitle>
           <CardAction>
             <Button variant="ghost" size="sm" asChild className="text-blue-400 hover:text-blue-300">
               <Link href="/dashboard/estimates">View all</Link>
@@ -147,7 +147,7 @@ export default async function DashboardPage() {
                 <TableRow key={est.id} className="border-border/40 cursor-pointer hover:bg-white/5">
                   <TableCell>
                     <Link href={`/dashboard/estimates/${est.id}`} className="block">
-                      <p className="truncate text-sm font-medium text-zinc-100">
+                      <p className="truncate text-sm font-medium text-zinc-900">
                         {est.project_name ?? "Untitled Project"}
                       </p>
                       <p className="mt-0.5 text-xs text-zinc-500">
@@ -174,7 +174,7 @@ export default async function DashboardPage() {
                   <TableCell className="hidden text-xs text-zinc-400 sm:table-cell">
                     {est.confidence != null ? `${(est.confidence * 100).toFixed(1)}%` : "—"}
                   </TableCell>
-                  <TableCell className="text-right text-sm font-medium text-zinc-100">
+                  <TableCell className="text-right text-sm font-medium text-zinc-900">
                     {est.grand_total != null ? `LKR ${est.grand_total.toLocaleString()}` : "—"}
                   </TableCell>
                   <TableCell className="text-right">

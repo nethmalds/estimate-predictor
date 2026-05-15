@@ -120,8 +120,8 @@ export default function NewEstimatePage() {
       <div className="flex min-h-[60vh] items-center justify-center">
         <div className="max-w-sm text-center">
           <CheckCircle className="mx-auto mb-4 h-12 w-12 text-green-400" />
-          <h2 className="mb-2 text-lg font-semibold text-zinc-100">Estimation Started!</h2>
-          <p className="text-sm text-zinc-400">Redirecting to your estimate...</p>
+          <h2 className="mb-2 text-lg font-semibold text-zinc-900">Estimation Started!</h2>
+          <p className="text-sm text-zinc-600">Redirecting to your estimate...</p>
         </div>
       </div>
     );
@@ -135,8 +135,8 @@ export default function NewEstimatePage() {
       <div className="pointer-events-none absolute -top-20 left-1/3 -z-10 h-[250px] w-[400px] rounded-full bg-blue-600/10 blur-[100px]" />
 
       <div>
-        <h1 className="text-2xl font-bold text-zinc-100">Construction Cost Estimator</h1>
-        <p className="mt-1 text-sm text-zinc-400">
+        <h1 className="text-2xl font-bold text-zinc-900">Construction Cost Estimator</h1>
+        <p className="mt-1 text-sm text-zinc-600">
           Complete the form to generate your Bill of Quantities estimate.
         </p>
       </div>
@@ -145,8 +145,8 @@ export default function NewEstimatePage() {
 
       <Card className="border-border/60 bg-card/80 backdrop-blur-sm">
         <CardHeader>
-          <CardTitle className="text-zinc-100">{WIZARD_STEPS[currentStep - 1].title}</CardTitle>
-          <CardDescription className="text-zinc-400">
+          <CardTitle className="text-zinc-900">{WIZARD_STEPS[currentStep - 1].title}</CardTitle>
+          <CardDescription className="text-zinc-600">
             {WIZARD_STEPS[currentStep - 1].description}
           </CardDescription>
         </CardHeader>
@@ -199,7 +199,7 @@ export default function NewEstimatePage() {
           variant="outline"
           onClick={handleBack}
           disabled={currentStep === 1}
-          className="border-border/60 text-zinc-300 hover:text-zinc-100"
+          className="border-border/60 text-zinc-600 hover:text-zinc-900"
         >
           <ChevronLeft /> Back
         </Button>

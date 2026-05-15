@@ -246,7 +246,7 @@ function ProjectSpecPanel({ wizardPayload }: { wizardPayload: Record<string, unk
           >
             <div className="flex items-center gap-2">
               <Building2 className="h-4 w-4 text-zinc-400" />
-              <span className="text-sm font-medium text-zinc-100">Project Specification</span>
+              <span className="text-sm font-medium text-zinc-900">Project Specification</span>
             </div>
             {open ? (
               <ChevronUp className="h-4 w-4 text-zinc-400" />
@@ -438,14 +438,14 @@ export default function EstimateDetailClient({
           <CardContent className="p-6">
             <div className="mb-6 flex items-start justify-between">
               <div>
-                <h3 className="text-base font-semibold text-zinc-100">Estimation in Progress</h3>
+                <h3 className="text-base font-semibold text-zinc-900">Estimation in Progress</h3>
                 <p className="mt-0.5 text-sm text-zinc-400">
                   AI is analysing your project and generating the BOQ...
                 </p>
               </div>
-              <div className="flex items-center gap-2 rounded-lg bg-zinc-800/60 px-3 py-1.5">
+              <div className="flex items-center gap-2 rounded-lg bg-zinc-100/60 px-3 py-1.5">
                 <Clock className="h-3.5 w-3.5 text-zinc-400" />
-                <span className="font-mono text-sm text-zinc-100">{formatTime(elapsed)}</span>
+                <span className="font-mono text-sm text-zinc-900">{formatTime(elapsed)}</span>
               </div>
             </div>
 
@@ -630,7 +630,7 @@ export default function EstimateDetailClient({
           ) : (
             <div className="flex items-start justify-between">
               <div>
-                <p className="text-sm font-medium text-zinc-100">
+                <p className="text-sm font-medium text-zinc-900">
                   {projectName || "Untitled Project"}
                 </p>
                 {notes && <p className="mt-1 text-xs text-zinc-400">{notes}</p>}
@@ -642,7 +642,7 @@ export default function EstimateDetailClient({
                       size="sm"
                       variant="ghost"
                       onClick={() => setEditing(true)}
-                      className="text-zinc-400 hover:text-zinc-100"
+                      className="text-zinc-400 hover:text-zinc-900"
                     >
                       <Edit3 /> Edit
                     </Button>
@@ -664,7 +664,7 @@ export default function EstimateDetailClient({
                 <p className="text-xs text-zinc-400">{c.label}</p>
                 {c.icon}
               </div>
-              <p className="text-xl font-bold text-zinc-100">{c.value}</p>
+              <p className="text-xl font-bold text-zinc-900">{c.value}</p>
             </CardContent>
           </Card>
         ))}

@@ -38,25 +38,25 @@ function CheckEmailContent() {
         <div className="mb-5 inline-flex h-14 w-14 items-center justify-center rounded-2xl border border-blue-500/20 bg-blue-500/10 shadow-lg shadow-blue-500/10">
           <Building2 className="h-7 w-7 text-blue-400" />
         </div>
-        <h1 className="text-3xl font-bold tracking-tight text-zinc-100">Check your inbox</h1>
-        <p className="mt-2 text-sm text-zinc-400">
+        <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Check your inbox</h1>
+        <p className="mt-2 text-sm text-zinc-500">
           We sent a verification link to your email address
         </p>
       </div>
 
       {/* Card */}
-      <div className="rounded-2xl border border-zinc-800/80 bg-zinc-900/80 p-8 text-center shadow-2xl shadow-black/40 backdrop-blur-sm">
+      <div className="rounded-2xl border border-zinc-200/80 bg-white/80 p-8 text-center shadow-2xl shadow-zinc-200/40 backdrop-blur-sm">
         {/* Icon */}
         <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full border border-blue-500/20 bg-blue-500/10">
           <Mail className="h-8 w-8 text-blue-400" />
         </div>
 
-        {email && <p className="mb-2 text-sm text-zinc-300">We sent a verification email to</p>}
-        {email && <p className="mb-6 font-semibold break-all text-zinc-100">{email}</p>}
+        {email && <p className="mb-2 text-sm text-zinc-600">We sent a verification email to</p>}
+        {email && <p className="mb-6 font-semibold break-all text-zinc-900">{email}</p>}
 
-        <p className="mb-8 text-sm text-zinc-400">
+        <p className="mb-8 text-sm text-zinc-600">
           Click the link in that email to activate your account. The link is valid for{" "}
-          <span className="text-zinc-300">24 hours</span>.
+          <span className="text-zinc-700">24 hours</span>.
         </p>
 
         {/* Resend section */}
@@ -84,7 +84,7 @@ function CheckEmailContent() {
               variant="outline"
               onClick={handleResend}
               disabled={resendState === "loading" || !email}
-              className="w-full rounded-xl border-zinc-700 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
+              className="w-full rounded-xl border-zinc-300 text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900"
             >
               {resendState === "loading" ? (
                 <span className="flex items-center gap-2">
@@ -101,7 +101,7 @@ function CheckEmailContent() {
         {/* Divider */}
         <div className="relative my-6">
           <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-zinc-800" />
+            <div className="w-full border-t border-zinc-200" />
           </div>
         </div>
 

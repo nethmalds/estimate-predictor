@@ -71,7 +71,7 @@ export default function RegisterPage() {
     setForm((f) => ({ ...f, [field]: e.target.value }));
 
   const inputClass =
-    "h-11 bg-zinc-800/60 border-zinc-700/60 text-zinc-100 placeholder:text-zinc-500 focus-visible:border-blue-500/70 focus-visible:ring-blue-500/20 rounded-xl";
+    "h-11 bg-zinc-50/60 border-zinc-300/60 text-zinc-900 placeholder:text-zinc-400 focus-visible:border-blue-500/70 focus-visible:ring-blue-500/20 rounded-xl";
 
   return (
     <div className="w-full max-w-md">
@@ -80,12 +80,12 @@ export default function RegisterPage() {
         <div className="mb-5 inline-flex h-14 w-14 items-center justify-center rounded-2xl border border-blue-500/20 bg-blue-500/10 shadow-lg shadow-blue-500/10">
           <Building2 className="h-7 w-7 text-blue-400" />
         </div>
-        <h1 className="text-3xl font-bold tracking-tight text-zinc-100">Create account</h1>
-        <p className="mt-2 text-sm text-zinc-400">Start generating AI-powered estimates for free</p>
+        <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Create account</h1>
+        <p className="mt-2 text-sm text-zinc-500">Start generating AI-powered estimates for free</p>
       </div>
 
       {/* Card */}
-      <div className="rounded-2xl border border-zinc-800/80 bg-zinc-900/80 p-8 shadow-2xl shadow-black/40 backdrop-blur-sm">
+      <div className="rounded-2xl border border-zinc-200/80 bg-white/80 p-8 shadow-2xl shadow-zinc-200/40 backdrop-blur-sm">
         {/* Error */}
         {error && (
           <div
@@ -101,11 +101,11 @@ export default function RegisterPage() {
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Full name */}
           <div className="space-y-2">
-            <Label htmlFor="name" className="text-sm font-medium text-zinc-300">
+            <Label htmlFor="name" className="text-sm font-medium text-zinc-700">
               Full name
             </Label>
             <div className="relative">
-              <User className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-zinc-500" />
+              <User className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-zinc-400" />
               <Input
                 id="name"
                 type="text"
@@ -124,7 +124,7 @@ export default function RegisterPage() {
               Email address
             </Label>
             <div className="relative">
-              <Mail className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-zinc-500" />
+              <Mail className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-zinc-400" />
               <Input
                 id="email"
                 type="email"
@@ -144,7 +144,7 @@ export default function RegisterPage() {
                 Password
               </Label>
               <div className="relative">
-                <Lock className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-zinc-500" />
+                <Lock className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-zinc-400" />
                 <Input
                   id="password"
                   type="password"
@@ -162,7 +162,7 @@ export default function RegisterPage() {
                 Confirm
               </Label>
               <div className="relative">
-                <ShieldCheck className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-zinc-500" />
+                <ShieldCheck className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-zinc-400" />
                 <Input
                   id="confirmPassword"
                   type="password"
@@ -188,16 +188,16 @@ export default function RegisterPage() {
             >
               <SelectTrigger
                 id="role"
-                className="h-11 w-full rounded-xl border-zinc-700/60 bg-zinc-800/60 text-zinc-100 focus:border-blue-500/70 focus:ring-blue-500/20"
+                className="h-11 w-full rounded-xl border-zinc-300/60 bg-zinc-50/60 text-zinc-900 focus:border-blue-500/70 focus:ring-blue-500/20"
               >
                 <SelectValue placeholder="Select your role" />
               </SelectTrigger>
-              <SelectContent className="border-zinc-800 bg-zinc-900 text-zinc-100">
+              <SelectContent className="border-zinc-200 bg-white text-zinc-900">
                 {ROLES.map((r) => (
                   <SelectItem
                     key={r.value}
                     value={r.value}
-                    className="focus:bg-zinc-800 focus:text-zinc-100"
+                    className="focus:bg-zinc-100 focus:text-zinc-900"
                   >
                     {r.label}
                   </SelectItem>
@@ -229,10 +229,10 @@ export default function RegisterPage() {
         {/* Divider */}
         <div className="relative my-6">
           <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-zinc-800" />
+            <div className="w-full border-t border-zinc-200" />
           </div>
           <div className="relative flex justify-center text-xs">
-            <span className="bg-zinc-900 px-3 text-zinc-600">Already registered?</span>
+            <span className="bg-white px-3 text-zinc-500">Already registered?</span>
           </div>
         </div>
 
