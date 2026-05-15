@@ -7,22 +7,22 @@
 
 /* ─── Design tokens ─────────────────────────────────────────────────────── */
 :root {
-  --sidebar-bg: #1a1a1a;
-  --sidebar-hover: #2a2a2a;
+  --sidebar-bg: #f5f5f5;
+  --sidebar-hover: #e8e8e8;
   --sidebar-border: oklch(0.922 0 0);
-  --chat-bg: #212121;
-  --input-bg: #2f2f2f;
-  --input-border: #3d3d3d;
+  --chat-bg: #f9f9f9;
+  --input-bg: #f3f3f3;
+  --input-border: #d4d4d4;
   --input-focus-glow: rgba(212, 168, 83, 0.18);
-  --user-bubble-bg: #2f2f2f;
-  --user-bubble-border: #444;
-  --assistant-text: #ececec;
+  --user-bubble-bg: #efefef;
+  --user-bubble-border: #cccccc;
+  --assistant-text: #1a1a1a;
   --accent: oklch(0.97 0 0);
   --accent-hover: #c4973f;
   --muted: oklch(0.97 0 0);
-  --divider: #2d2d2d;
-  --code-bg: #1e1e2e;
-  --code-border: #313149;
+  --divider: #e5e5e5;
+  --code-bg: #f6f8fa;
+  --code-border: #d0d7de;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);

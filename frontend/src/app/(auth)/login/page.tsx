@@ -74,12 +74,12 @@ export default function LoginPage() {
         <div className="mb-5 inline-flex h-14 w-14 items-center justify-center rounded-2xl border border-blue-500/20 bg-blue-500/10 shadow-lg shadow-blue-500/10">
           <Building2 className="h-7 w-7 text-blue-400" />
         </div>
-        <h1 className="text-3xl font-bold tracking-tight text-zinc-100">Welcome back</h1>
-        <p className="mt-2 text-sm text-zinc-400">Sign in to access your estimates dashboard</p>
+        <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Welcome back</h1>
+        <p className="mt-2 text-sm text-zinc-500">Sign in to access your estimates dashboard</p>
       </div>
 
       {/* Card */}
-      <div className="rounded-2xl border border-zinc-800/80 bg-zinc-900/80 p-8 shadow-2xl shadow-black/40 backdrop-blur-sm">
+      <div className="rounded-2xl border border-zinc-200/80 bg-white/80 p-8 shadow-2xl shadow-zinc-200/40 backdrop-blur-sm">
         {/* Error alert */}
         {error && (
           <div
@@ -106,7 +106,7 @@ export default function LoginPage() {
                 variant="outline"
                 onClick={handleResend}
                 disabled={resendState === "loading"}
-                className="w-full rounded-xl border-zinc-700 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
+                className="w-full rounded-xl border-zinc-300 text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900"
               >
                 {resendState === "loading" ? (
                   <span className="flex items-center gap-2">
@@ -124,11 +124,11 @@ export default function LoginPage() {
         <form onSubmit={handleSubmit} className="space-y-5">
           {/* Email */}
           <div className="space-y-2">
-            <Label htmlFor="email" className="text-sm font-medium text-zinc-300">
+            <Label htmlFor="email" className="text-sm font-medium text-zinc-700">
               Email address
             </Label>
             <div className="relative">
-              <Mail className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-zinc-500" />
+              <Mail className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-zinc-400" />
               <Input
                 id="email"
                 type="email"
@@ -136,7 +136,7 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@example.com"
-                className="h-11 rounded-xl border-zinc-700/60 bg-zinc-800/60 pl-9 text-zinc-100 placeholder:text-zinc-500 focus-visible:border-blue-500/70 focus-visible:ring-blue-500/20"
+                className="h-11 rounded-xl border-zinc-300/60 bg-zinc-50/60 pl-9 text-zinc-900 placeholder:text-zinc-400 focus-visible:border-blue-500/70 focus-visible:ring-blue-500/20"
               />
             </div>
           </div>
@@ -144,7 +144,7 @@ export default function LoginPage() {
           {/* Password */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <Label htmlFor="password" className="text-sm font-medium text-zinc-300">
+              <Label htmlFor="password" className="text-sm font-medium text-zinc-700">
                 Password
               </Label>
               <Link
@@ -155,7 +155,7 @@ export default function LoginPage() {
               </Link>
             </div>
             <div className="relative">
-              <Lock className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-zinc-500" />
+              <Lock className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-zinc-400" />
               <Input
                 id="password"
                 type="password"
@@ -163,7 +163,7 @@ export default function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
-                className="h-11 rounded-xl border-zinc-700/60 bg-zinc-800/60 pl-9 text-zinc-100 placeholder:text-zinc-500 focus-visible:border-blue-500/70 focus-visible:ring-blue-500/20"
+                className="h-11 rounded-xl border-zinc-300/60 bg-zinc-50/60 pl-9 text-zinc-900 placeholder:text-zinc-400 focus-visible:border-blue-500/70 focus-visible:ring-blue-500/20"
               />
             </div>
           </div>
@@ -191,10 +191,10 @@ export default function LoginPage() {
         {/* Divider */}
         <div className="relative my-6">
           <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-zinc-800" />
+            <div className="w-full border-t border-zinc-200" />
           </div>
           <div className="relative flex justify-center text-xs">
-            <span className="bg-zinc-900 px-3 text-zinc-600">New here?</span>
+            <span className="bg-white px-3 text-zinc-500">New here?</span>
           </div>
         </div>
 

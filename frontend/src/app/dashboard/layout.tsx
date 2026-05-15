@@ -21,7 +21,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   }
 
   return (
-    <div className="dark">
+    <div>
       <SidebarProvider>
         <AppSidebar user={session.user} />
         <SidebarInset className="bg-background text-foreground">

@@ -36,7 +36,7 @@ function ResetPasswordForm() {
 
   if (!token) {
     return (
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-6 text-center text-sm text-zinc-400">
+      <div className="rounded-xl border border-zinc-200 bg-white p-6 text-center text-sm text-zinc-600">
         Invalid or missing reset token.{" "}
         <Link href="/forgot-password" className="text-blue-400 hover:text-blue-300">
           Request a new link
@@ -47,8 +47,8 @@ function ResetPasswordForm() {
 
   if (done) {
     return (
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-6 text-center">
-        <p className="mb-4 text-sm text-zinc-300">
+      <div className="rounded-xl border border-zinc-200 bg-white p-6 text-center">
+        <p className="mb-4 text-sm text-zinc-700">
           Password reset successfully. You can now sign in.
         </p>
         <Link href="/login" className="text-sm text-blue-400 hover:text-blue-300">
@@ -61,7 +61,7 @@ function ResetPasswordForm() {
   return (
     <form
       onSubmit={handleSubmit}
-      className="space-y-4 rounded-xl border border-zinc-800 bg-zinc-900 p-6"
+      className="space-y-4 rounded-xl border border-zinc-200 bg-white p-6"
     >
       {error && (
         <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">
@@ -69,19 +69,19 @@ function ResetPasswordForm() {
         </div>
       )}
       <div>
-        <label className="mb-1.5 block text-sm font-medium text-zinc-300">New password</label>
+        <label className="mb-1.5 block text-sm font-medium text-zinc-700">New password</label>
         <input
           type="password"
           required
           minLength={8}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-500 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+          className="w-full rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:ring-2 focus:ring-blue-500 focus:outline-none"
           placeholder="Min. 8 characters"
         />
       </div>
       <div>
-        <label className="mb-1.5 block text-sm font-medium text-zinc-300">
+        <label className="mb-1.5 block text-sm font-medium text-zinc-700">
           Confirm new password
         </label>
         <input
@@ -90,7 +90,7 @@ function ResetPasswordForm() {
           minLength={8}
           value={confirm}
           onChange={(e) => setConfirm(e.target.value)}
-          className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-500 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+          className="w-full rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:ring-2 focus:ring-blue-500 focus:outline-none"
           placeholder="Re-enter new password"
         />
       </div>
@@ -113,12 +113,12 @@ function ResetPasswordForm() {
 
 export default function ResetPasswordPage() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-950 px-4 text-zinc-100">
+    <div className="flex min-h-screen items-center justify-center bg-background px-4 text-foreground">
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
           <Building2 className="mx-auto mb-3 h-8 w-8 text-blue-400" />
           <h1 className="text-2xl font-bold">Set new password</h1>
-          <p className="mt-1 text-sm text-zinc-400">Choose a strong password for your account.</p>
+          <p className="mt-1 text-sm text-zinc-600">Choose a strong password for your account.</p>
         </div>
         <Suspense fallback={<div className="text-center text-sm text-zinc-500">Loading...</div>}>
           <ResetPasswordForm />

@@ -12,11 +12,11 @@ export default function CtaSection() {
         aria-hidden="true"
       />
 
-      <div className="relative z-10 mx-auto max-w-3xl rounded-3xl border border-zinc-800 bg-zinc-900/80 p-10 text-center shadow-2xl shadow-black/40 backdrop-blur-md sm:p-14">
-        <h2 className="mb-4 text-3xl font-bold text-zinc-100 sm:text-4xl">
+      <div className="relative z-10 mx-auto max-w-3xl rounded-3xl border border-zinc-200 bg-white/80 p-10 text-center shadow-2xl shadow-zinc-200/40 backdrop-blur-md sm:p-14">
+        <h2 className="mb-4 text-3xl font-bold text-zinc-900 sm:text-4xl">
           Ready to estimate your project?
         </h2>
-        <p className="mx-auto mb-8 max-w-xl text-lg text-zinc-400">
+        <p className="mx-auto mb-8 max-w-xl text-lg text-zinc-600">
           Join homeowners and contractors using AI to generate accurate, instant construction
           estimates.
         </p>

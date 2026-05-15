@@ -78,7 +78,7 @@ def score_confidence(
     """Calculate a confidence score for the estimate.
 
     Scoring breakdown:
-    - Base: 0.50
+    - Base: 1.00 (starts at 100% and applies penalties)
     - Floorplan data present: +0.10
     - All MVED parameters collected (no defaults used): +0.10
     - Mandatory category coverage bonus: +0.15 (IMP-CONF-02)
@@ -92,7 +92,7 @@ def score_confidence(
     - Items with disagreement_score > 0.50: -0.03 per item (max -0.12)
     - Global-allocation-only items: -0.05 per item proportion (max -0.10)
     """
-    score = 0.50
+    score = 1.00
     reasons: list[str] = []
 
     # Floorplan bonus

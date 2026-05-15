@@ -11,6 +11,7 @@
       "test": "vitest --config ./vitest.config.ts run",
       "test:watch": "vitest --config ./vitest.config.ts",
       "test:coverage": "vitest --config ./vitest.config.ts run --coverage",
+      "test:ci": "vitest --config ./vitest.config.ts run --coverage --reporter=verbose",
       "test:e2e": "playwright test --config ./playwright.config.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check ."

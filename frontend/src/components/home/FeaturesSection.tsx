@@ -25,13 +25,13 @@ const FEATURES = [
 
 export default function FeaturesSection() {
   return (
-    <section className="relative border-y border-zinc-800/60 bg-zinc-900/30 px-6 py-24">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-blue-900/5 via-zinc-950/0 to-zinc-950/0" />
+    <section className="relative border-y border-zinc-200/60 bg-zinc-50/30 px-6 py-24">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-blue-100/10 via-white/0 to-white/0" />
 
       <div className="relative z-10 mx-auto max-w-6xl">
         <div className="mb-16 text-center">
-          <h2 className="mb-4 text-3xl font-bold text-zinc-100">Enterprise-Grade Features</h2>
-          <p className="mx-auto max-w-xl text-zinc-400">
+          <h2 className="mb-4 text-3xl font-bold text-zinc-900">Enterprise-Grade Features</h2>
+          <p className="mx-auto max-w-xl text-zinc-600">
             Everything you need to produce accurate, professional construction estimates without the
             manual effort.
           </p>
@@ -41,13 +41,13 @@ export default function FeaturesSection() {
           {FEATURES.map((f) => (
             <div
               key={f.title}
-              className="group rounded-2xl border border-zinc-800/80 bg-zinc-900/60 p-8 backdrop-blur-sm transition-all duration-300 hover:-translate-y-1 hover:border-zinc-700/80 hover:bg-zinc-800/80 hover:shadow-xl hover:shadow-black/20"
+              className="group rounded-2xl border border-zinc-200/80 bg-white/60 p-8 backdrop-blur-sm transition-all duration-300 hover:-translate-y-1 hover:border-zinc-300/80 hover:bg-zinc-50/80 hover:shadow-xl hover:shadow-zinc-200/40"
             >
               <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-xl border border-blue-500/20 bg-blue-500/10 transition-all duration-300 group-hover:scale-110 group-hover:bg-blue-500/20">
                 {f.icon}
               </div>
-              <h3 className="mb-3 text-xl font-semibold text-zinc-100">{f.title}</h3>
-              <p className="text-sm leading-relaxed text-zinc-400">{f.desc}</p>
+              <h3 className="mb-3 text-xl font-semibold text-zinc-900">{f.title}</h3>
+              <p className="text-sm leading-relaxed text-zinc-600">{f.desc}</p>
             </div>
           ))}
         </div>

@@ -48,6 +48,9 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 asyncio_mode = "auto"
 addopts = "--tb=short -q"
+markers = [
+    "integration: marks tests that require mocked external services (deselect with '-m not integration')",
+]
 
 [tool.coverage.run]
 source = ["."]
@@ -55,3 +58,5 @@ omit = ["tests/*", "*/migrations/*", "*/__pycache__/*", ".venv/*"]
 
 [tool.coverage.report]
 exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:", "raise NotImplementedError"]
+fail_under = 60
+show_missing = true

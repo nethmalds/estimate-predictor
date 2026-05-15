@@ -280,7 +280,7 @@ export default function EstimatesListClient({ accessToken }: { accessToken: stri
             <Link href={`/dashboard/estimates/${est.id}`} className="min-w-0">
               <div className="flex items-center gap-2">
                 {est.status === "in_progress" && <InProgressPulse />}
-                <p className="truncate text-sm font-medium text-zinc-100">
+                <p className="truncate text-sm font-medium text-zinc-900">
                   {est.project_name ?? "Untitled Project"}
                 </p>
               </div>
@@ -297,7 +297,7 @@ export default function EstimatesListClient({ accessToken }: { accessToken: stri
             </Link>
             <Link
               href={`/dashboard/estimates/${est.id}`}
-              className="text-right text-sm font-medium text-zinc-100"
+              className="text-right text-sm font-medium text-zinc-900"
             >
               {est.grand_total != null ? `LKR ${est.grand_total.toLocaleString()}` : "—"}
             </Link>
