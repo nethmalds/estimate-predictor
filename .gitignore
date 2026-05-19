@@ -16,3 +16,4 @@ audits/
 
 # Claude-generated plans and memory (local to each developer's machine)
 .claude/
+.gstack/

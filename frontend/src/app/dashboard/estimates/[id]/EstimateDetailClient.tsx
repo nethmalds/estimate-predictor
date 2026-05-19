@@ -105,7 +105,8 @@ function getStageStatus(
   if (step.status === "skipped") return "skipped";
   if (step.status === "completed" || step.status === "accepted" || step.status === "done")
     return "completed";
-  if (step.status === "rejected" || step.status === "failed") return "failed";
+  if (step.status === "failed") return "failed";
+  if (step.status === "rejected") return "skipped"; // graceful degradation, not a crash
   return "active";
 }
 
