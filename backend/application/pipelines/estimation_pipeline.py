@@ -25,8 +25,11 @@ parametric-only path.  The rejection reason is recorded in ``floorplan_meta``.
 """
 from __future__ import annotations
 
+import logging
 import threading
 from typing import Callable
+
+_log = logging.getLogger(__name__)
 
 from services.clarification_process.service import apply_defaults
 from services.item_gen_process.service import build_final_boq_items
@@ -98,10 +101,27 @@ def run_estimation_pipeline_from_project_info(
             _check_cancel()
             try:
                 geom = _run_floorplan_facade(url)
-                geometries.append(geom)
-                _emit(progress_callback, "floorplan_cv", "progress",
-                      {"url_index": i, "url": url, "area_m2": geom.get("total_floor_area_m2")})
+                # Orchestrator never raises — it returns a placeholder on failure.
+                # Exclude placeholders so a silent download failure cannot drag
+                # the merged confidence to 0 and trigger a false rejection.
+                if geom.get("method") == "placeholder":
+                    skip_reason = geom.get("_skip_reason", "unknown")
+                    _log.warning(
+                        "floorplan_cv placeholder returned — image could not be processed",
+                        extra={"url": url, "skip_reason": skip_reason},
+                    )
+                    _emit(progress_callback, "floorplan_cv", "warning",
+                          {"url": url, "error": skip_reason})
+                else:
+                    geometries.append(geom)
+                    _emit(progress_callback, "floorplan_cv", "progress",
+                          {"url_index": i, "url": url, "area_m2": geom.get("total_floor_area_m2")})
             except Exception as exc:
+                _log.warning(
+                    "floorplan_cv per-URL failure",
+                    extra={"url": url, "error": str(exc)},
+                    exc_info=True,
+                )
                 _emit(progress_callback, "floorplan_cv", "warning", {"url": url, "error": str(exc)})
 
         if geometries:
@@ -115,6 +135,8 @@ def run_estimation_pipeline_from_project_info(
                     f"threshold {_FLOORPLAN_ACCEPTANCE_THRESHOLD:.2f}. "
                     "Falling back to parametric-only path."
                 )
+                _emit(progress_callback, "floorplan_cv", "completed",
+                      {"geometry_confidence": geo_confidence, "accepted": False})
                 _emit(progress_callback, "floorplan_acceptance", "rejected",
                       {"geometry_confidence": geo_confidence,
                        "threshold": _FLOORPLAN_ACCEPTANCE_THRESHOLD,
@@ -149,7 +171,10 @@ def run_estimation_pipeline_from_project_info(
                        "threshold": _FLOORPLAN_ACCEPTANCE_THRESHOLD})
                 _emit(progress_callback, "floorplan_cv", "completed", floorplan_meta)
         else:
-            _emit(progress_callback, "floorplan_cv", "failed", {"error": "All floorplan images failed processing"})
+            _emit(progress_callback, "floorplan_cv", "failed",
+                  {"error": "All floorplan images failed processing"})
+            _emit(progress_callback, "floorplan_acceptance", "skipped",
+                  {"reason": "floorplan_cv failed — no geometry to evaluate"})
             floorplan_meta = {"available": False, "error": "All images failed"}
 
     # -----------------------------------------------------------------------

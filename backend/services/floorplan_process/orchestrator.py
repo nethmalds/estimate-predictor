@@ -39,8 +39,12 @@ Geometry dict shape returned
 """
 from __future__ import annotations
 
+import logging
 import math
 import re
+import warnings
+
+_log = logging.getLogger(__name__)
 
 from services.floorplan_process.confidence_scorer import compute_geometry_confidence
 from services.floorplan_process.geometry_extraction.geometry_extractor import (
@@ -57,6 +61,39 @@ from services.floorplan_process.image_cache import download_and_cache
 
 # Assumed floor-to-ceiling height for wall-length estimates (metres)
 _DEFAULT_FLOOR_HEIGHT_M = 3.0
+
+
+def _placeholder_geometry(skip_reason: str) -> dict:
+    """Return a fully-valid zero-valued geometry dict for when the image cannot be loaded."""
+    heuristic_flags = {
+        "derived_from_area_only": False,
+        "assumed_floor_height": True,
+        "inferred_internal_walls": False,
+        "missing_scale_confirmation": True,
+    }
+    return {
+        "total_floor_area_m2": 0.0,
+        "perimeter_m": 0.0,
+        "wall_length_m": 0.0,
+        "opening_count": 0,
+        "room_count": 0,
+        "rooms": [],
+        "dimensions_raw": [],
+        "method": "placeholder",
+        "geometry_confidence": 0.0,
+        "scale_source": "heuristic",
+        "dimensions_confidence": 0.0,
+        "openings_confidence": 0.0,
+        "coverage_confidence": 0.0,
+        "heuristic_flags": heuristic_flags,
+        "inferred_area_flag": True,
+        "_yolo_avg_conf": 0.0,
+        "_preprocess": {},
+        "_ocr": {},
+        "_ocr_succeeded": False,
+        "_yolo_succeeded": False,
+        "_skip_reason": skip_reason,
+    }
 
 
 def _rasterize_pdf(pdf_path: str) -> str:
@@ -100,20 +137,71 @@ def run_floorplan_pipeline(image_path: str) -> dict:
     """
     # ── Resolve remote URL to local path ────────────────────────────────────
     if image_path.startswith(("http://", "https://")):
-        image_path = download_and_cache(image_path)
+        try:
+            image_path = download_and_cache(image_path)
+        except Exception as exc:
+            warnings.warn(
+                f"[orchestrator] Failed to download {image_path!r}: {exc}. "
+                "Returning placeholder geometry.",
+                stacklevel=2,
+            )
+            return _placeholder_geometry(f"download_failed: {exc}")
 
     # ── Rasterize PDF to PNG before OCR/YOLO ────────────────────────────────
     if image_path.lower().endswith(".pdf"):
-        image_path = _rasterize_pdf(image_path)
-
+        try:
+            image_path = _rasterize_pdf(image_path)
+        except Exception as exc:
+            warnings.warn(
+                f"[orchestrator] Failed to rasterize PDF {image_path!r}: {exc}. "
+                "Returning placeholder geometry.",
+                stacklevel=2,
+            )
+            return _placeholder_geometry(f"pdf_rasterize_failed: {exc}")
 
     # ── Raw extraction adapters ──────────────────────────────────────────────
-    preprocess = preprocess_image(image_path)
-    ocr_result = extract_floorplan_text_and_dimensions(image_path)
+    try:
+        preprocess = preprocess_image(image_path)
+    except Exception as exc:
+        warnings.warn(
+            f"[orchestrator] preprocess_image failed for {image_path!r}: {exc}. "
+            "Continuing with empty preprocess.",
+            stacklevel=2,
+        )
+        preprocess = {"image_path": image_path, "size_bytes": 0, "format": "unknown", "method": "failed"}
 
-    openings_raw   = detect_openings(image_path)
-    rooms_raw      = extract_room_boundaries(image_path)
-    yolo_avg_conf  = get_detection_confidence(image_path)   # LRU-cached — no extra cost
+    # OCR step — degrade gracefully if Tesseract unavailable
+    _ocr_succeeded = False
+    try:
+        ocr_result = extract_floorplan_text_and_dimensions(image_path)
+        _ocr_succeeded = True
+    except Exception as exc:
+        warnings.warn(
+            f"[orchestrator] OCR failed for {image_path!r}: {exc}. "
+            "Continuing with empty dimensions.",
+            stacklevel=2,
+        )
+        ocr_result = {
+            "image_path": image_path, "text": "", "dimensions": [],
+            "dimension_count": 0, "ocr_skipped": True, "ocr_skip_reason": str(exc),
+        }
+
+    # YOLO step — degrade gracefully if model unavailable or inference fails
+    _yolo_succeeded = False
+    try:
+        openings_raw  = detect_openings(image_path)
+        rooms_raw     = extract_room_boundaries(image_path)
+        yolo_avg_conf = get_detection_confidence(image_path)   # LRU-cached — no extra cost
+        _yolo_succeeded = True
+    except Exception as exc:
+        warnings.warn(
+            f"[orchestrator] YOLO failed for {image_path!r}: {exc}. "
+            "Continuing with empty detections.",
+            stacklevel=2,
+        )
+        openings_raw  = {"doors": 0, "windows": 0, "method": "yolo_failed"}
+        rooms_raw     = {"rooms": [], "method": "yolo_failed"}
+        yolo_avg_conf = 0.0
 
     # ── Dimension / OCR signals ─────────────────────────────────────────────
     dimensions_raw: list[str] = ocr_result.get("dimensions") or []
@@ -141,6 +229,11 @@ def run_floorplan_pipeline(image_path: str) -> dict:
         scale_source       = "heuristic"
 
     method = "ocr_dimensions" if dimensions_raw else "ocr_text_only"
+
+    # Both sub-steps failed — mark explicitly
+    if not _ocr_succeeded and not _yolo_succeeded:
+        scale_source = "heuristic"
+        method = "placeholder"
 
     # ── Perimeter & wall lengths ─────────────────────────────────────────────
     # Approximation: assume roughly square footprint → perimeter ≈ 4√A
@@ -181,6 +274,12 @@ def run_floorplan_pipeline(image_path: str) -> dict:
         coverage_confidence = coverage_confidence,
         heuristic_flags     = heuristic_flags,
     )
+    _log.info(
+        "floorplan_cv result: yolo_avg_conf=%.4f rooms=%d scale_source=%s "
+        "ocr_dims=%d geometry_confidence=%.4f ocr_ok=%s yolo_ok=%s",
+        yolo_avg_conf, len(room_structs), scale_source,
+        len(dimensions_raw), geometry_confidence, _ocr_succeeded, _yolo_succeeded,
+    )
 
     # ── Assemble geometry dict ────────────────────────────────────────────────
     geometry = {
@@ -205,6 +304,9 @@ def run_floorplan_pipeline(image_path: str) -> dict:
         "_yolo_avg_conf": yolo_avg_conf,
         "_preprocess":    preprocess,
         "_ocr":           ocr_result,
+        # Diagnostic sub-step success flags
+        "_ocr_succeeded":  _ocr_succeeded,
+        "_yolo_succeeded": _yolo_succeeded,
     }
 
     return geometry

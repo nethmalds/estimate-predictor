@@ -85,8 +85,21 @@ def download_and_cache(url: str) -> str:
 
     _CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
+    # Use a browser-like User-Agent — bare "Python-urllib/3.x" is blocked by
+    # Cloudflare and UploadThing's CDN (ufs.sh / utfs.io).
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": (
+                "Mozilla/5.0 (compatible; FloorplanProcessor/1.0; "
+                "+https://github.com/nethmalds)"
+            ),
+            "Accept": "image/jpeg,image/png,image/webp,application/pdf,*/*",
+        },
+    )
+
     try:
-        with urllib.request.urlopen(url, timeout=30) as response:  # noqa: S310
+        with urllib.request.urlopen(req, timeout=30) as response:  # noqa: S310
             if response.status != 200:
                 raise RuntimeError(
                     f"Failed to download floorplan: HTTP {response.status} for url={url}"

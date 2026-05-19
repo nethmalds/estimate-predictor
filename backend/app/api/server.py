@@ -65,6 +65,14 @@ async def startup_event() -> None:
     await init_redis()
     # Start session cleanup loop
     process_store.start_cleanup()
+    # Pre-load YOLO model in the main thread so the CPU context is ready before
+    # the first asyncio.to_thread pipeline call attempts it.
+    from services.floorplan_process.geometry_extraction.yolo_detector import _detector
+    _detector._load()
+    if _detector._load_error:
+        logger.warning("YOLO model failed to pre-load: %s", _detector._load_error)
+    else:
+        logger.info("YOLO model pre-loaded on %s", _detector._device)
     # Validate SMTP configuration and warn early if not set
     if not settings.smtp_from_email:
         logger.warning(

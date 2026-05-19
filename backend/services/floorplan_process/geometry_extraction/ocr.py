@@ -1,4 +1,5 @@
 import re
+import warnings
 from pathlib import Path
 
 
@@ -27,6 +28,17 @@ def _extract_dimensions(text: str) -> list[str]:
     return _dedupe_preserve_order([match.strip() for match in matches if match.strip()])
 
 
+def _ocr_skip_result(image_file: Path, reason: str) -> dict:
+    return {
+        "image_path": str(image_file.resolve()),
+        "text": "",
+        "dimensions": [],
+        "dimension_count": 0,
+        "ocr_skipped": True,
+        "ocr_skip_reason": reason,
+    }
+
+
 def extract_floorplan_text_and_dimensions(image_path: str) -> dict:
     image_file = Path(image_path)
     if not image_file.exists():
@@ -46,7 +58,20 @@ def extract_floorplan_text_and_dimensions(image_path: str) -> dict:
         raise ValueError(f"Invalid image file: {image_path}") from exc
 
     image = image.convert("L")
-    text = pytesseract.image_to_string(image, config="--psm 6")
+    try:
+        text = pytesseract.image_to_string(image, config="--psm 6")
+    except pytesseract.TesseractNotFoundError:
+        warnings.warn(
+            "[OCR] Tesseract binary not found — OCR skipped, dimensions will be empty.",
+            stacklevel=2,
+        )
+        return _ocr_skip_result(image_file, "tesseract_not_found")
+    except pytesseract.TesseractError as exc:
+        warnings.warn(
+            f"[OCR] Tesseract error processing image — OCR skipped: {exc}",
+            stacklevel=2,
+        )
+        return _ocr_skip_result(image_file, "tesseract_error")
     dimensions = _extract_dimensions(text)
 
     return {
