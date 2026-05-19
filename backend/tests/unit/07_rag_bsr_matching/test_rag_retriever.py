@@ -21,6 +21,8 @@ from services.rag_process.retriever import (  # noqa: E402
 )
 
 
+# ── BE-TC-037: Query normalisation lowercases and strips special characters ───
+
 class TestNormalizeQuery:
     def test_lowercases_input(self):
         assert normalize_query("Excavation Work") == "excavation work"

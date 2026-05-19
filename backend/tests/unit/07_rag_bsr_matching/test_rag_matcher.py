@@ -61,6 +61,8 @@ class TestIsContractualItem:
         assert is_contractual_item({"description": "PERFORMANCE SECURITY", "category": "other"})
 
 
+# ── BE-TC-035 & 036: RAG matching — regular and contractual items ─────────────
+
 class TestMatchBoqItemsBatch:
     def test_regular_item_calls_match_fn(self):
         calls: list[str] = []

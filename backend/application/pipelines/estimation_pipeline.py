@@ -87,6 +87,10 @@ def run_estimation_pipeline_from_project_info(
     floorplan_meta: dict = {"available": False}
     floorplan_urls = floorplan_urls or []
 
+    if not floorplan_urls:
+        _emit(progress_callback, "floorplan_cv", "skipped", {"reason": "No floorplan images provided"})
+        _emit(progress_callback, "floorplan_acceptance", "skipped", {"reason": "No floorplan images provided"})
+
     if floorplan_urls:
         _emit(progress_callback, "floorplan_cv", "started", {"url_count": len(floorplan_urls)})
         geometries: list[dict] = []
@@ -187,36 +191,44 @@ def run_estimation_pipeline_from_project_info(
 
     # -----------------------------------------------------------------------
     # Stage 6a: Post-RAG BSR Retrieval Validation
-    # Validate BSR match readiness before quantity take-off.  Items with
-    # no BSR code AND no rate (and not contractual) are flagged as warnings;
-    # they proceed to quantity take-off but get needs_rate_review = True.
+    # Items with no BSR match are dropped here — they carry no rate or unit
+    # so they cannot contribute to cost and would only introduce noise in
+    # quantity take-off.  Soft-match items with zero rate are flagged for
+    # review but retained.  Items with a matched BSR code but no unit are
+    # also flagged.
     # -----------------------------------------------------------------------
     post_rag_warnings: list[str] = []
+    matched_items: list[dict] = []
     for _item in boq_items:
         _mt = _item.get("match_type", "no_match")
         _rate = float(_item.get("rate") or 0.0)
         _desc = (_item.get("description") or "")[:60]
         if _mt == "no_match":
             post_rag_warnings.append(
-                f"'{_desc}': no BSR match found — quantity will proceed but rate is zero."
+                f"'{_desc}': no BSR match found — item dropped before quantity take-off."
             )
-            _item["needs_rate_review"] = True
-        elif _mt == "soft_match" and _rate <= 0.0:
+            continue  # drop — not added to matched_items
+        if _mt == "soft_match" and _rate <= 0.0:
             post_rag_warnings.append(
                 f"'{_desc}': soft BSR match has zero rate — marked for review."
             )
             _item["needs_rate_review"] = True
         # Validate unit propagation: BSR unit must be set for non-contractual items
-        if _mt not in ("contractual", "no_match") and not (_item.get("unit") or "").strip():
+        if _mt not in ("contractual",) and not (_item.get("unit") or "").strip():
             post_rag_warnings.append(
                 f"'{_desc}': BSR match returned no unit — quantity calculation may be unreliable."
             )
+        matched_items.append(_item)
 
-    if post_rag_warnings:
-        _emit(progress_callback, "bsr_validation", "completed", {
-            "warning_count": len(post_rag_warnings),
-            "warnings": post_rag_warnings[:5],   # surface first 5 to SSE
-        })
+    dropped_count = len(boq_items) - len(matched_items)
+    boq_items = matched_items
+
+    _emit(progress_callback, "bsr_validation", "completed", {
+        "warning_count": len(post_rag_warnings),
+        "warnings": post_rag_warnings[:5],   # surface first 5 to SSE
+        "dropped_count": dropped_count,
+        "retained_count": len(boq_items),
+    })
 
     # -----------------------------------------------------------------------
     # Stage 7: Quantity Take-Off Engine (branching)

@@ -8,7 +8,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Progress } from "@/components/ui/progress";
 import {
   Table,
   TableBody,
@@ -121,18 +120,14 @@ interface ConfidenceBreakdownProps {
 function ConfidenceBreakdownCard({ confidence }: ConfidenceBreakdownProps) {
   const score = Number(confidence.score ?? 0);
   const breakdown = (confidence.breakdown as Record<string, number>) ?? {};
-  // section_breakdown comes from the backend as { [section]: { item_count, matched, unmatched, contractual } }
   const rawSectionBreakdown = (confidence.section_breakdown as Record<string, SectionStats | number>) ?? {};
-  // Normalise: if value is already a plain number use it; otherwise derive matched/item_count ratio
-  const sectionBreakdown: Record<string, number> = Object.fromEntries(
-    Object.entries(rawSectionBreakdown).map(([k, v]) => {
-      if (typeof v === "number") return [k, v];
-      const stats = v as SectionStats;
-      const total = stats.item_count || 0;
-      const ratio = total > 0 ? (stats.matched + stats.contractual) / total : 0;
-      return [k, ratio];
-    })
-  );
+
+  const categoryData = Object.entries(rawSectionBreakdown)
+    .map(([k, v]) => ({
+      name: k.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
+      items: typeof v === "number" ? v : (v as SectionStats).item_count,
+    }))
+    .sort((a, b) => b.items - a.items);
 
   return (
     <Card className="mb-6">
@@ -153,35 +148,40 @@ function ConfidenceBreakdownCard({ confidence }: ConfidenceBreakdownProps) {
             ))}
           </div>
         )}
-        {Object.keys(sectionBreakdown).length > 0 && (
+        {categoryData.length > 0 && (
           <div>
-            <p className="text-muted-foreground mb-2 text-xs tracking-wide uppercase">
-              Section confidence
+            <p className="text-muted-foreground mb-3 text-xs uppercase tracking-wide">
+              Items per Category
             </p>
-            <div className="space-y-2">
-              {Object.entries(sectionBreakdown).map(([section, pct]) => {
-                return (
-                  <div key={section} className="space-y-1">
-                    <div className="flex justify-between text-xs">
-                      <span className="text-muted-foreground">
-                        {section.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
-                      </span>
-                      <Badge
-                        variant="outline"
-                        className={
-                          pct >= 0.6
-                            ? "border-green-500/25 text-green-400"
-                            : "border-yellow-500/25 text-yellow-400"
-                        }
-                      >
-                        {(pct * 100).toFixed(1)}%
-                      </Badge>
-                    </div>
-                    <Progress value={pct * 100} className="h-1" />
-                  </div>
-                );
-              })}
-            </div>
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={categoryData} margin={{ top: 4, right: 16, left: 8, bottom: 90 }}>
+                <XAxis
+                  dataKey="name"
+                  tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10 }}
+                  angle={-40}
+                  textAnchor="end"
+                  interval={0}
+                />
+                <YAxis
+                  allowDecimals={false}
+                  tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10 }}
+                />
+                <Tooltip
+                  formatter={(v) => [v, "BOQ Items"]}
+                  contentStyle={{
+                    background: "hsl(var(--card))",
+                    border: "1px solid hsl(var(--border))",
+                    borderRadius: 8,
+                  }}
+                  labelStyle={{ color: "hsl(var(--card-foreground))" }}
+                />
+                <Bar dataKey="items" radius={[4, 4, 0, 0]}>
+                  {categoryData.map((_, i) => (
+                    <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
           </div>
         )}
       </CardContent>

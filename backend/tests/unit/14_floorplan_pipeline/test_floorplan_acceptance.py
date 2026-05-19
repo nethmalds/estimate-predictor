@@ -78,6 +78,8 @@ def _run_pipeline_acceptance_test(geometry_confidence: float, threshold: float =
     return _apply_acceptance_gate(_make_geometry(geometry_confidence), threshold=threshold)
 
 
+# ── BE-TC-078 & 079: Acceptance gate — confidence threshold and rejection ─────
+
 class TestFloorplanAcceptanceBoundary:
     def test_high_confidence_geometry_is_accepted(self):
         geom, meta = _run_pipeline_acceptance_test(geometry_confidence=0.75)

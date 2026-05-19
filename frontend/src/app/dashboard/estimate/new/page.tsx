@@ -15,7 +15,7 @@ import {
 } from "@/types/wizard";
 import { validateStep } from "@/lib/schemas/wizard";
 import { WizardProgress } from "@/components/wizard/WizardProgress";
-import { ProjectBasicsStep } from "@/components/wizard/steps/ProjectBasicsStep";
+import { ProjectBasicsStep, type FileEntry } from "@/components/wizard/steps/ProjectBasicsStep";
 import { FloorAreasStep } from "@/components/wizard/steps/FloorAreasStep";
 import { BuildingProgramStep } from "@/components/wizard/steps/BuildingProgramStep";
 import { ConstructionDetailsStep } from "@/components/wizard/steps/ConstructionDetailsStep";
@@ -72,8 +72,17 @@ export default function NewEstimatePage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [started, setStarted] = useState(false);
+  const [estimateId, setEstimateId] = useState<string | null>(null);
+  const [floorplanEntries, setFloorplanEntries] = useState<FileEntry[]>([]);
+  const hasUploadsPending = floorplanEntries.some(
+    (e) => e.status === "pending" || e.status === "uploading"
+  );
 
   const handleNext = () => {
+    if (currentStep === 1 && hasUploadsPending) {
+      setStepErrors({ _uploads: "Please wait for all file uploads to complete before proceeding." });
+      return;
+    }
     const errors = validateStep(currentStep, formData);
     if (Object.keys(errors).length > 0) {
       setStepErrors(errors);
@@ -101,27 +110,32 @@ export default function NewEstimatePage() {
       const { estimate_id } = await submitWizardForm(payload, accessToken || undefined);
 
       // Estimation is now running in the background on the server.
-      // Immediately navigate to the detail page which shows live progress.
+      // Stay on this page and let the user navigate to the detail page manually.
+      setEstimateId(estimate_id ?? null);
       setStarted(true);
-      if (estimate_id) {
-        router.push(`/dashboard/estimates/${estimate_id}`);
-      } else {
-        router.push("/dashboard/estimates");
-      }
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : "Submission failed.");
       setIsSubmitting(false);
     }
   };
 
-  // Brief "started" screen shown while router.push is navigating.
   if (started) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
-        <div className="max-w-sm text-center">
-          <CheckCircle className="mx-auto mb-4 h-12 w-12 text-green-400" />
-          <h2 className="mb-2 text-lg font-semibold text-zinc-900">Estimation Started!</h2>
-          <p className="text-sm text-zinc-600">Redirecting to your estimate...</p>
+        <div className="max-w-sm space-y-4 text-center">
+          <CheckCircle className="mx-auto h-12 w-12 text-green-400" />
+          <h2 className="text-lg font-semibold text-zinc-900">Estimation Started!</h2>
+          <p className="text-sm text-zinc-600">
+            Your estimate is being generated in the background.
+          </p>
+          {estimateId && (
+            <Button
+              onClick={() => router.push(`/dashboard/estimates/${estimateId}`)}
+              className="bg-blue-600 text-white shadow-lg shadow-blue-600/20 hover:bg-blue-500"
+            >
+              View Estimate Progress
+            </Button>
+          )}
         </div>
       </div>
     );
@@ -156,6 +170,8 @@ export default function NewEstimatePage() {
               data={formData.projectBasics}
               onChange={(d: ProjectBasics) => setFormData((f) => ({ ...f, projectBasics: d }))}
               errors={stepErrors}
+              uploadEntries={floorplanEntries}
+              onUploadEntriesChange={setFloorplanEntries}
             />
           )}
           {currentStep === 2 && (
@@ -194,6 +210,16 @@ export default function NewEstimatePage() {
         </CardContent>
       </Card>
 
+      {currentStep === 1 && stepErrors._uploads && (
+        <p className="text-center text-xs text-amber-600">{stepErrors._uploads}</p>
+      )}
+
+      {currentStep === 1 && hasUploadsPending && !stepErrors._uploads && (
+        <p className="text-center text-xs text-amber-600">
+          Uploading floor plans — please wait before continuing.
+        </p>
+      )}
+
       <div className="flex items-center justify-between">
         <Button
           variant="outline"
@@ -207,6 +233,7 @@ export default function NewEstimatePage() {
         {currentStep < 5 ? (
           <Button
             onClick={handleNext}
+            disabled={currentStep === 1 && hasUploadsPending}
             className="bg-blue-600 text-white shadow-lg shadow-blue-600/20 hover:bg-blue-500"
           >
             Next <ChevronRight />
@@ -214,7 +241,7 @@ export default function NewEstimatePage() {
         ) : (
           <Button
             onClick={handleSubmit}
-            disabled={isSubmitting}
+            disabled={isSubmitting || hasUploadsPending}
             className="bg-blue-600 text-white shadow-lg shadow-blue-600/20 hover:bg-blue-500"
           >
             {isSubmitting ? (

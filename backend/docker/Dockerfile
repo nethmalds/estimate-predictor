@@ -13,7 +13,7 @@ WORKDIR /build
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     gcc \
-    libgl1-mesa-glx \
+    libgl1 \
     libglib2.0-0 \
     tesseract-ocr \
  && rm -rf /var/lib/apt/lists/*
@@ -35,7 +35,7 @@ WORKDIR /app
 
 # NEW: Only runtime native libs (no gcc / build-essential) to keep the image lean
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgl1-mesa-glx \
+    libgl1 \
     libglib2.0-0 \
     tesseract-ocr \
     curl \

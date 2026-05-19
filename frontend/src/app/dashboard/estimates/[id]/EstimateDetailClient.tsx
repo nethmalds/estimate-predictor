@@ -38,6 +38,7 @@ import {
   Clock,
   CheckCircle2,
   Loader2,
+  Minus,
   ChevronDown,
   ChevronUp,
   Building2,
@@ -98,9 +99,10 @@ type StageKey = (typeof PIPELINE_STAGES)[number]["key"];
 function getStageStatus(
   key: StageKey,
   progressSteps: ProgressStep[]
-): "completed" | "active" | "pending" | "failed" {
-  const step = progressSteps.find((s) => s.step === key);
+): "completed" | "active" | "pending" | "failed" | "skipped" {
+  const step = [...progressSteps].reverse().find((s) => s.step === key);
   if (!step) return "pending";
+  if (step.status === "skipped") return "skipped";
   if (step.status === "completed" || step.status === "accepted" || step.status === "done")
     return "completed";
   if (step.status === "rejected" || step.status === "failed") return "failed";
@@ -147,7 +149,10 @@ function ProgressStageTimeline({ progressSteps }: { progressSteps: ProgressStep[
   const completedCount = PIPELINE_STAGES.filter(
     (s) => getStageStatus(s.key, progressSteps) === "completed"
   ).length;
-  const percent = Math.round((completedCount / PIPELINE_STAGES.length) * 100);
+  const countableStages = PIPELINE_STAGES.filter(
+    (s) => getStageStatus(s.key, progressSteps) !== "skipped"
+  ).length;
+  const percent = Math.round((completedCount / (countableStages || PIPELINE_STAGES.length)) * 100);
 
   return (
     <div className="space-y-3">
@@ -169,7 +174,9 @@ function ProgressStageTimeline({ progressSteps }: { progressSteps: ProgressStep[
                     ? "bg-muted/40 border-transparent"
                     : status === "failed"
                       ? "bg-destructive/10 border-destructive/20"
-                      : "bg-muted/40 border-transparent"
+                      : status === "skipped"
+                        ? "bg-muted/20 border-transparent opacity-60"
+                        : "bg-muted/40 border-transparent"
               }`}
             >
               <span
@@ -180,7 +187,9 @@ function ProgressStageTimeline({ progressSteps }: { progressSteps: ProgressStep[
                       ? "text-blue-400"
                       : status === "failed"
                         ? "text-destructive"
-                        : "text-muted-foreground"
+                        : status === "skipped"
+                          ? "text-zinc-400"
+                          : "text-muted-foreground"
                 }`}
               >
                 {status === "completed" ? (
@@ -189,6 +198,8 @@ function ProgressStageTimeline({ progressSteps }: { progressSteps: ProgressStep[
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : status === "failed" ? (
                   <XCircle className="h-4 w-4" />
+                ) : status === "skipped" ? (
+                  <Minus className="h-4 w-4" />
                 ) : (
                   <div className="border-border h-4 w-4 rounded-full border-2" />
                 )}
@@ -201,7 +212,9 @@ function ProgressStageTimeline({ progressSteps }: { progressSteps: ProgressStep[
                       ? "text-foreground/80"
                       : status === "failed"
                         ? "text-destructive"
-                        : "text-muted-foreground"
+                        : status === "skipped"
+                          ? "text-muted-foreground/60 italic"
+                          : "text-muted-foreground"
                 }`}
               >
                 {stage.label}

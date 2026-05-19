@@ -15,13 +15,14 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { useUploadThing } from "@/lib/uploadthing";
-import { useState, useCallback, useRef } from "react";
-import Image from "next/image";
+import { useState, useCallback, useRef, useEffect } from "react";
 
 interface Props {
   data: ProjectBasics;
   onChange: (data: ProjectBasics) => void;
   errors: Record<string, string>;
+  uploadEntries: FileEntry[];
+  onUploadEntriesChange: (entries: FileEntry[]) => void;
 }
 
 const BUILDING_TYPES: {
@@ -50,7 +51,7 @@ const BUILDING_TYPES: {
   },
 ];
 
-interface FileEntry {
+export interface FileEntry {
   id: string;
   file: File;
   status: "pending" | "uploading" | "done" | "error";
@@ -69,10 +70,14 @@ function fileSizeLabel(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function ProjectBasicsStep({ data, onChange, errors }: Props) {
-  const [fileEntries, setFileEntries] = useState<FileEntry[]>([]);
+export function ProjectBasicsStep({ data, onChange, errors, uploadEntries, onUploadEntriesChange }: Props) {
   const [isDragging, setIsDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  // Keep a ref to uploadEntries for safe access inside async callbacks
+  const fileEntriesRef = useRef<FileEntry[]>(uploadEntries);
+  useEffect(() => {
+    fileEntriesRef.current = uploadEntries;
+  }, [uploadEntries]);
 
   const { startUpload } = useUploadThing("floorplanUploader", {
     onClientUploadComplete: (res) => {
@@ -83,51 +88,53 @@ export function ProjectBasicsStep({ data, onChange, errors }: Props) {
   });
 
   const uploadFiles = useCallback(
-    async (newEntries: FileEntry[]) => {
+    async (newEntries: FileEntry[], snapshot?: FileEntry[]) => {
       const toUpload = newEntries.filter((e) => e.status === "pending");
       if (!toUpload.length) return;
 
-      // Mark all as uploading
-      setFileEntries((prev) =>
-        prev.map((e) => (toUpload.find((u) => u.id === e.id) ? { ...e, status: "uploading" } : e))
+      // Mark all as uploading. Use `snapshot` when provided — addFiles passes
+      // the combined array because fileEntriesRef hasn't updated yet at that
+      // point (useEffect runs after render, but this runs synchronously before).
+      const base = snapshot ?? fileEntriesRef.current;
+      onUploadEntriesChange(
+        base.map((e) =>
+          toUpload.find((u) => u.id === e.id) ? { ...e, status: "uploading" } : e
+        )
       );
 
       try {
         const res = await startUpload(toUpload.map((e) => e.file));
         if (!res) throw new Error("No response");
 
-        // Compute next entries outside the setter so we can call onChange separately
-        let nextEntries: FileEntry[] = [];
-        setFileEntries((prev) => {
-          nextEntries = prev.map((e) => {
-            const idx = toUpload.findIndex((u) => u.id === e.id);
-            if (idx === -1) return e;
-            const uploaded = res[idx];
-            const url = uploaded?.ufsUrl;
-            // Extract the file key from the URL: last path segment
-            const fileKey = url ? url.split("/").pop() : undefined;
-            return url
-              ? { ...e, status: "done" as const, url, fileKey }
-              : { ...e, status: "error" as const };
-          });
-          return nextEntries;
+        // Use ref to get latest entries after async call completes
+        const nextEntries = fileEntriesRef.current.map((e) => {
+          const idx = toUpload.findIndex((u) => u.id === e.id);
+          if (idx === -1) return e;
+          const uploaded = res[idx];
+          const url = uploaded?.ufsUrl;
+          // Extract the file key from the URL: last path segment
+          const fileKey = url ? url.split("/").pop() : undefined;
+          return url
+            ? { ...e, status: "done" as const, url, fileKey }
+            : { ...e, status: "error" as const };
         });
+        onUploadEntriesChange(nextEntries);
 
-        // Sync completed URLs to parent — must be outside the setter
+        // Sync completed URLs to parent data
         const allDoneUrls = nextEntries
           .filter((e) => e.status === "done" && e.url)
           .map((e) => e.url as string);
         onChange({ ...data, floorplan_urls: allDoneUrls });
       } catch {
-        setFileEntries((prev) =>
-          prev.map((e) =>
+        onUploadEntriesChange(
+          fileEntriesRef.current.map((e) =>
             toUpload.find((u) => u.id === e.id) ? { ...e, status: "error" as const } : e
           )
         );
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [startUpload, data, onChange]
+    [startUpload, data, onChange, onUploadEntriesChange]
   );
 
   const addFiles = useCallback(
@@ -143,15 +150,14 @@ export function ProjectBasicsStep({ data, onChange, errors }: Props) {
         previewUrl: isImage(f) ? URL.createObjectURL(f) : undefined,
       }));
 
-      setFileEntries((prev) => {
-        const combined = [...prev, ...newEntries];
-        return combined;
-      });
+      const combined = [...fileEntriesRef.current, ...newEntries];
+      onUploadEntriesChange(combined);
 
-      // Kick off upload after state is flushed
-      void uploadFiles(newEntries);
+      // Pass combined as snapshot — ref is stale at this point and uploadFiles
+      // would otherwise overwrite state back to the old entries.
+      void uploadFiles(newEntries, combined);
     },
-    [uploadFiles]
+    [uploadFiles, onUploadEntriesChange]
   );
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -172,7 +178,7 @@ export function ProjectBasicsStep({ data, onChange, errors }: Props) {
   };
 
   const removeFile = (id: string) => {
-    const entry = fileEntries.find((e) => e.id === id);
+    const entry = fileEntriesRef.current.find((e) => e.id === id);
     if (!entry) return;
 
     // Revoke blob URL to free memory
@@ -187,19 +193,19 @@ export function ProjectBasicsStep({ data, onChange, errors }: Props) {
       }).catch((err) => console.error("Failed to delete file from UploadThing:", err));
     }
 
-    const next = fileEntries.filter((e) => e.id !== id);
+    const next = fileEntriesRef.current.filter((e) => e.id !== id);
     const allDoneUrls = next
       .filter((e) => e.status === "done" && e.url)
       .map((e) => e.url as string);
-    setFileEntries(next);
+    onUploadEntriesChange(next);
     onChange({ ...data, floorplan_urls: allDoneUrls });
   };
 
   const retryFile = (id: string) => {
-    const entry = fileEntries.find((e) => e.id === id);
+    const entry = fileEntriesRef.current.find((e) => e.id === id);
     if (!entry) return;
     const reset: FileEntry = { ...entry, status: "pending" };
-    setFileEntries((prev) => prev.map((e) => (e.id === id ? reset : e)));
+    onUploadEntriesChange(fileEntriesRef.current.map((e) => (e.id === id ? reset : e)));
     void uploadFiles([reset]);
   };
 
@@ -320,21 +326,19 @@ export function ProjectBasicsStep({ data, onChange, errors }: Props) {
         </div>
 
         {/* File List */}
-        {fileEntries.length > 0 && (
+        {uploadEntries.length > 0 && (
           <ul className="mt-3 space-y-2">
-            {fileEntries.map((entry) => (
+            {uploadEntries.map((entry) => (
               <li
                 key={entry.id}
                 className="bg-muted/50 border-border flex items-center gap-3 rounded-lg border p-3"
               >
                 {/* Thumbnail or PDF icon */}
                 {entry.previewUrl ? (
-                  <Image
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
                     src={entry.previewUrl}
                     alt={entry.file.name}
-                    width={40}
-                    height={40}
-                    unoptimized
                     className="border-border h-10 w-10 shrink-0 rounded-md border object-cover"
                   />
                 ) : (

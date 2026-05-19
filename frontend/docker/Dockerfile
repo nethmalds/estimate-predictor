@@ -19,6 +19,8 @@ WORKDIR /app
 # NEW: NEXT_PUBLIC_* vars are inlined at build time — must be passed as build arg
 ARG NEXT_PUBLIC_API_BASE_URL
 ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL
+ARG NEXT_PUBLIC_APP_URL
+ENV NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .

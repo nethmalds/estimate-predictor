@@ -17,6 +17,8 @@ if str(_BACKEND_ROOT) not in sys.path:
 from services.quantity_gen_process.confidence_scoring import fuse_candidates  # noqa: E402
 
 
+# ── BE-TC-041: Quantity reconciliation resolves conflicts between sources ──────
+
 class TestArithmeticMeanContinuous:
     """Continuous units must use arithmetic mean, not weighted mean."""
 

@@ -91,4 +91,4 @@ class TestChat:
 
         result = ollama_client.chat(messages=[{"role": "user", "content": "Hello"}])
 
-        assert "Mocked BOQ Item" in result
+        assert '"items"' in result

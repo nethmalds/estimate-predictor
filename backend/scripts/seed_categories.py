@@ -34,13 +34,21 @@ CATEGORIES = [
 def seed_categories():
     db = SessionLocal()
     try:
+        added_count = 0
+        skipped_count = 0
         for code, name, desc in CATEGORIES:
             existing = db.query(Category).filter(Category.code == code).first()
             if not existing:
                 category = Category(code=code, name=name, description=desc)
                 db.add(category)
+                added_count += 1
+            else:
+                skipped_count += 1
         db.commit()
-        print("Successfully seeded categories.")
+        if added_count > 0:
+            print(f"Successfully seeded {added_count} new categories.")
+        if skipped_count > 0:
+            print(f"Skipped {skipped_count} categories (already exist in database).")
     except Exception as e:
         db.rollback()
         print(f"Failed to seed categories: {e}")

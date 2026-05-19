@@ -31,13 +31,13 @@ def _residential_payload(**overrides) -> dict:
         "finish_level": "standard",
         "structural_system": "framed",
         "roof_type": "clay_tile",
-        "ceiling_type": "plastered",
+        "ceiling_type": "gypsum_mineral_fibre",
     }
     base.update(overrides)
     return base
 
 
-# ── /validate ─────────────────────────────────────────────────────────────────
+# ── BE-TC-005 & 006 & 007 & 008 & 009: Validate endpoint ─────────────────────
 
 class TestValidateEndpoint:
     async def test_valid_residential_payload_returns_valid_true(self, async_client):
@@ -73,6 +73,15 @@ class TestValidateEndpoint:
         )
         assert resp.status_code == 422
 
+    async def test_floor_count_above_maximum_returns_422(self, async_client):
+        # BE-TC-008: floor_count=101 violates le=100 constraint in WizardFormPayload
+        payload = _residential_payload(floor_count=101)
+        resp = await async_client.post(
+            "/api/estimate-project/form/validate",
+            json={"payload": payload},
+        )
+        assert resp.status_code == 422
+
     async def test_commercial_payload_without_primary_use_type_returns_errors(self, async_client):
         payload = {
             "building_type": "commercial",
@@ -94,7 +103,7 @@ class TestValidateEndpoint:
         assert body["valid"] is False
 
 
-# ── /submit ───────────────────────────────────────────────────────────────────
+# ── BE-TC-011 & 012 & 013 & 014: Submit endpoint ─────────────────────────────
 
 class TestSubmitEndpoint:
     async def test_missing_auth_returns_401(self, unauthed_client):
@@ -162,7 +171,7 @@ class TestSubmitEndpoint:
         assert resp.status_code == 422
 
 
-# ── /stream/{session_id} ──────────────────────────────────────────────────────
+# ── BE-TC-016: Stream endpoint — unknown session returns 404 ─────────────────
 
 class TestStreamEndpoint:
     async def test_unknown_session_returns_404(self, async_client, monkeypatch):

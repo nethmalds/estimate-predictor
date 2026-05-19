@@ -1,18 +1,27 @@
 # NEW: Caddy reverse proxy configuration.
 # DOMAIN env var is injected by docker-compose.prod.yml from .env.
 # If DOMAIN=example.com, Caddy auto-provisions a Let's Encrypt TLS cert.
-# If DOMAIN=:80, Caddy serves plain HTTP (useful for local/VPN-only runs).
+# If DOMAIN=http://estimate, Caddy serves plain HTTP for the single-label host.
+# If DOMAIN=:80, Caddy serves plain HTTP for any host (useful for local/VPN-only runs).
 
 {$DOMAIN} {
     encode zstd gzip
 
-    # NEW: Route backend-bound traffic — API, health, and OpenAPI docs
+    # Auth.js session-management routes must go to the Next.js frontend.
+    # FastAPI also owns /api/auth/* (login, register, etc.) so we only intercept
+    # the specific paths that Auth.js exposes — not the whole /api/auth/* tree.
+    @authjs path /api/auth/session /api/auth/csrf /api/auth/providers /api/auth/error /api/auth/signin /api/auth/signout /api/auth/callback/*
+    handle @authjs {
+        reverse_proxy frontend:3000
+    }
+
+    # Route backend-bound traffic — API, health, and OpenAPI docs
     @api path /api/* /health /docs /openapi.json
     handle @api {
         reverse_proxy backend:8000
     }
 
-    # NEW: Everything else goes to the Next.js frontend
+    # Everything else goes to the Next.js frontend
     handle {
         reverse_proxy frontend:3000
     }

@@ -93,7 +93,7 @@ def _mock_costed_items(items: list[dict]) -> dict:
     }
 
 
-# ── Tests ─────────────────────────────────────────────────────────────────────
+# ── BE-TC-046 & 047 & 048: Output keys, confidence range, non-empty BOQ ───────
 
 class TestEstimationPipelineOutput:
     """Verify the pipeline output structure when all stages succeed."""
@@ -169,15 +169,114 @@ class TestEstimationPipelineOutput:
         for item in result["boq_items"]:
             assert item.get("unit") is not None, f"Item has no unit: {item}"
 
+    # BE-TC-049: costs.total is present and positive
     def test_costs_has_total(self):
         result = self._run_with_mocks()
         assert "total" in result["costs"]
         assert result["costs"]["total"] > 0
 
+    # BE-TC-050: floorplan.available is false when no URLs supplied
     def test_floorplan_meta_shows_unavailable_when_no_urls(self):
         result = self._run_with_mocks()
         assert result["floorplan"]["available"] is False
 
+
+# ── Floor-scope allocation integration check ─────────────────────────────────
+
+class TestComputeQuantitiesFloorAllocation:
+    """Exercise compute_quantities end-to-end with floor-variant BOQ items.
+
+    Reproduces the bug shape from the screenshot: 4 brick masonry items
+    (external/internal × ground/first floor) that the calculator would
+    otherwise stamp with an identical whole-building quantity.  Verifies
+    the floor-scope allocation pass redistributes the total.
+    """
+
+    def _floor_variant_items(self) -> list[dict]:
+        # All 4 items in the same category & near-identical signature —
+        # the calculator will assign each the same whole-building qty.
+        base = {
+            "category": "brick_masonry",
+            "section": "Brick Masonry",
+            "unit": "m²",
+            "preferred_unit": "m²",
+            "unit_kind": "continuous",
+            "source": "llm_baseline",
+            "floors": 2,
+            "work_category": "Brick Masonry",
+            "material_type": "Masonry",
+        }
+        return [
+            {**base, "description": 'Brick masonry 1:5 9" external walls ground floor', "floor_scope": "ground"},
+            {**base, "description": 'Brick masonry 1:5 4.5" internal partition walls ground floor', "floor_scope": "ground"},
+            {**base, "description": 'Brick masonry 1:5 9" external walls first floor',  "floor_scope": "first"},
+            {**base, "description": 'Brick masonry 1:5 4.5" internal partition walls first floor', "floor_scope": "first"},
+        ]
+
+    def _project_info_2_floors(self) -> dict:
+        return {
+            "building_type": "residential",
+            "floors": 2,
+            "parameters": {
+                "bedrooms": 3,
+                "bathrooms": 2,
+                "built_up_area": "235 m2",
+                "finish_level": "standard",
+                "structural_system": "framed",
+            },
+            "per_floor_area_m2": {"ground": 117.5, "first": 117.5},
+            "explicit_parameters": ["bedrooms", "bathrooms"],
+            "value_sources": {},
+            "applied_defaults": [],
+        }
+
+    def test_per_floor_items_no_longer_share_quantity(self):
+        from services.quantity_gen_process.service import compute_quantities
+
+        result = compute_quantities(
+            self._floor_variant_items(),
+            self._project_info_2_floors(),
+            floorplan_geometry=None,
+        )
+        quantities = [r["quantity"] for r in result]
+        # Bug fixed: no two sibling items in this group share an identical qty.
+        assert len(set(quantities)) >= 2, (
+            f"All 4 floor variants still share identical quantity {quantities[0]} — "
+            "allocator did not run."
+        )
+
+    def test_group_sum_matches_whole_building_total(self):
+        from services.quantity_gen_process.rule_based_calculator import calculate_parametric
+        from services.quantity_gen_process.service import compute_quantities
+
+        items = self._floor_variant_items()
+        info = self._project_info_2_floors()
+
+        # Expected whole-building total = single-pass parametric calc for the category.
+        whole_qty, _ = calculate_parametric(items[0], info)
+        assert whole_qty is not None and whole_qty > 0, "Sanity: parametric calc must produce a value"
+
+        result = compute_quantities(items, info, floorplan_geometry=None)
+        group_sum = sum(r["quantity"] for r in result)
+        # Within 2% of the single whole-building number.
+        assert abs(group_sum - whole_qty) / whole_qty < 0.02, (
+            f"Group sum {group_sum} should be ≈ whole-building {whole_qty} (within 2%)."
+        )
+
+    def test_allocation_method_recorded(self):
+        from services.quantity_gen_process.service import compute_quantities
+
+        result = compute_quantities(
+            self._floor_variant_items(),
+            self._project_info_2_floors(),
+            floorplan_geometry=None,
+        )
+        methods = {r.get("quantity_allocation_method") for r in result}
+        # All 4 items in the group must be tagged with the same allocation method.
+        assert methods == {"per_floor_area_x_qs_weight"}, f"Unexpected methods: {methods}"
+
+
+# ── BE-TC-051: Cancel event raises PipelineCancelledError ────────────────────
 
 class TestEstimationPipelineCancellation:
     """Verify that the pipeline respects a cancel event."""
@@ -206,6 +305,8 @@ class TestEstimationPipelineCancellation:
                     cancel_event=cancel_event,
                 )
 
+
+# ── BE-TC-052: Progress callback receives stage events ───────────────────────
 
 class TestEstimationPipelineProgressCallback:
     """Verify that the pipeline emits progress events."""

@@ -3,4 +3,4 @@ Disallow: /dashboard/
 Disallow: /api/
 Allow: /
 
-Sitemap: https://your-domain.example/sitemap.xml
+Sitemap: http://estimate/sitemap.xml

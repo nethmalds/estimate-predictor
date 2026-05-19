@@ -20,6 +20,11 @@ from services.item_gen_process.llm_client import (
     generate_baseline_boq,
     gap_fill_boq_items,
 )
+from services.shared.floor_scope import (
+    FLOOR_TOKENS as _FLOOR_TOKENS,
+    GRADE_TOKENS as _GRADE_TOKENS,
+    parse_floor_scope,
+)
 
 
 
@@ -262,6 +267,7 @@ def _enrich_item(item: dict[str, Any], floors: int, predictor_conf: dict[str, fl
         enriched["section"] = _infer_section(description)
 
     enriched["floors"] = floors
+    enriched["floor_scope"] = parse_floor_scope(description)
 
     # Phase 2: stable BOQ item contract metadata
     cat = (enriched.get("category") or "misc").lower()
@@ -333,13 +339,8 @@ def _deduplicate_items(
     return unique, removed
 
 
-# Floor-level tokens that distinguish per-floor items (IMP-BOQ-04)
-_FLOOR_TOKENS = re.compile(
-    r"\b(ground|first|second|third|fourth|fifth|basement|roof|upper|lower|gf|ff|sf)\b",
-    re.IGNORECASE,
-)
-# Concrete grade tokens
-_GRADE_TOKENS = re.compile(r"\bgrade\s*\d+\b|\bc\d{2}\b", re.IGNORECASE)
+# Note: floor-level / grade tokens are imported from services.shared.floor_scope
+# to avoid duplication with the quantity_gen allocator (and a future import cycle).
 
 
 def _descriptions_differ_in_floor_or_grade(a: str, b: str) -> bool:

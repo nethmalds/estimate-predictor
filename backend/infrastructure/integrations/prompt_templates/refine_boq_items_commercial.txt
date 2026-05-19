@@ -1,34 +1,64 @@
+# SHARED-BLOCK v1 — sections [6], [7], [8] must stay in sync across all 6 templates
+# (generate_baseline_boq_{residential,commercial,industrial}.txt
+#  + refine_boq_items_{residential,commercial,industrial}.txt)
+
+[1] ROLE
 You are a Quantity Surveyor for Sri Lanka BSR 2025 (Western Province).
 
-Task: Refine the BOQ by comparing baseline BOQ items with predictor candidates and return the FINAL BOQ item list required for this project.
+[2] TASK
+Refine the BOQ by comparing baseline BOQ items with predictor candidates and return the FINAL BOQ item list required for this COMMERCIAL project.
 
-Project:
+[3] PROJECT INPUT
 $project_info_json
 
+[3a] PRIOR INPUTS
 Baseline BOQ items (initial LLM list):
 $baseline_items_json
 
 Predictor candidate items:
 $item_predictor_items_json
 
-Instructions:
-- Compare both sources and produce one final BOQ list for the project scope.
-- Keep in-scope items, add genuinely missing essentials, and remove only items that are out of scope for the project.
-- Duplicate or closely similar items may exist between the baseline and predictor candidates; do not remove an item only because it appears repeated or similarly worded.
-- Exclude domestic/residential-only items.
-- Ensure primary_use_type-specific essentials and washroom_count sanitary items are covered.
-- Respect structural_system, roof_type, drainage_type, soil_condition, external_works_scope, floors, location, primary_use_type.
+[5] INSTRUCTIONS / SCOPE RULES (apply strictly)
+- Compare both sources and produce ONE final BOQ list for the project scope.
+- Keep in-scope items; add genuinely missing essentials; remove items that are out of scope.
+- Exclude domestic / residential-only items (bedroom wardrobes, domestic kitchen fit-outs).
+- Ensure primary_use_type-specific essentials are covered (Office, Retail, Hotel, Restaurant, Educational, Healthcare).
+- Scale sanitary items proportionally to washroom_count.
+- Respect: structural_system, roof_type, drainage_type, soil_condition, external_works_scope, floors, location, primary_use_type.
 - Outside Western Province: add one note item for regional rate adjustment.
 - Use BSR 2025 (Western Province) concise description style.
-- Return a project-specific final list only (no quantities, no rates).
+- Cover every applicable trade: preliminaries, substructure, superstructure, finishes, sanitary/plumbing, electrical, testing/commissioning, and external/civil when external_works_scope != "none".
 
+[6] CATEGORY COVERAGE & WEIGHTING (commercial profile)
+Three tiers — HEAVY (>=6 items), MEDIUM (>=3 items), LIGHT (>=1 item).
+- HEAVY:   concrete_works, formwork, reinforcement, doors_windows_and_glazing, flooring_and_tiling, sanitary_and_plumbing, electrical_and_mechanical
+- MEDIUM:  preliminary_and_general, excavation_and_earthwork, piling_and_substructure, brick_masonry, plastering_and_rendering, painting_and_finishes, roofing_and_ceiling, external_and_civil_works, testing_and_commissioning
+- LIGHT:   demolition_and_removal
+
+COVERAGE RULE. Every applicable scope rule above MUST produce >=2 items. Every HEAVY category MUST contain >=6 items, MEDIUM >=3, LIGHT >=1 — unless a scope rule explicitly excludes the category (e.g. structural_system=load_bearing excludes formwork and reinforcement). Expand by adding granular sub-items (per floor, per pipe size, per circuit, per element, per washroom). Per-floor items MUST include a canonical floor token in the description ("ground floor", "first floor", "second floor", "third floor", "fourth floor", "basement", "roof") — no abbreviations. Do not pad with vague filler.
+
+[9] MERGE RULE
+When baseline and predictor produce near-duplicates (same trade + same element + same material differing only in wording), merge into ONE item using the more specific wording (the one that names floor, size, material grade, or location). Do not emit both. Distinct sub-items (different floors, different pipe sizes, different fixture types, different circuits/zones) are NOT duplicates — keep all of them.
+
+[7] OUTPUT SCHEMA
 Return JSON with the FINAL refined BOQ items:
 {
   "items": [
     {
       "description": "<BSR-style description>",
-      "category": "<one of: brick_masonry, concrete_works, demolition_and_removal, doors_windows_and_glazing, electrical_and_mechanical, excavation_and_earthwork, external_and_civil_works, flooring_and_tiling, formwork, miscellaneous, painting_and_finishes, piling_and_substructure, plastering_and_rendering, preliminary_and_general, reinforcement, roofing_and_ceiling, sanitary_and_plumbing, testing_and_commissioning>",
-      "section": "<section name>"
+      "category": "<one of the 17 enum values below>",
+      "section": "<specific BSR section name>"
     }
   ]
 }
+
+Allowed category enum (17, exact strings):
+brick_masonry, concrete_works, demolition_and_removal, doors_windows_and_glazing, electrical_and_mechanical, excavation_and_earthwork, external_and_civil_works, flooring_and_tiling, formwork, painting_and_finishes, piling_and_substructure, plastering_and_rendering, preliminary_and_general, reinforcement, roofing_and_ceiling, sanitary_and_plumbing, testing_and_commissioning
+
+[8] OUTPUT DISCIPLINE
+- Return a single JSON object only.
+- Do NOT wrap in ```json or ``` fences. Do NOT add prose before or after.
+- `category` MUST be exactly one of the 17 enum values above — lowercase, underscores, no synonyms. The value `miscellaneous` is FORBIDDEN and will be rejected by the validator.
+- `section` MUST be a specific BSR heading (e.g. "Substructure", "Roofing and Ceiling", "Sanitary Installations"). Forbidden: empty, "Miscellaneous", "Other", "General".
+- No duplicate `description` strings (case-insensitive). Differentiate by floor / size / location / material in the wording.
+- No quantities, no rates, no totals. Project-specific items only.

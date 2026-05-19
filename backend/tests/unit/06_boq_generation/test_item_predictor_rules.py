@@ -118,6 +118,40 @@ class TestIndustrialRules:
         assert "cold room insulated panel system" not in items
 
 
+# ── Finish level normalisation (BE-TC-034) ────────────────────────────────────
+# _apply_rules does not directly branch on finish_level; finish level drives
+# the ML model via budget encoding.  This section tests the normalisation step
+# so the correct ordinal value reaches the model.
+
+class TestFinishLevelNormalisation:
+    def test_luxury_maps_to_luxury(self):
+        from services.item_gen_process.item_predictor import _normalise_budget_category
+        assert _normalise_budget_category("luxury") == "luxury"
+
+    def test_standard_maps_to_standard(self):
+        from services.item_gen_process.item_predictor import _normalise_budget_category
+        assert _normalise_budget_category("standard") == "standard"
+
+    def test_semi_luxury_maps_correctly(self):
+        from services.item_gen_process.item_predictor import _normalise_budget_category
+        assert _normalise_budget_category("semi-luxury") == "semi-luxury"
+
+    def test_high_end_alias_maps_to_luxury(self):
+        from services.item_gen_process.item_predictor import _normalise_budget_category
+        assert _normalise_budget_category("high_end") == "luxury"
+
+    def test_unknown_finish_defaults_to_standard(self):
+        from services.item_gen_process.item_predictor import _normalise_budget_category
+        assert _normalise_budget_category("deluxe") == "standard"
+
+    def test_apply_rules_not_affected_by_finish_level(self):
+        # _apply_rules has no finish_level branch — rule output must be
+        # identical regardless of finish_level (differentation is in ML model)
+        std_items = _apply_rules(_project("residential", finish_level="standard"), set())
+        lux_items = _apply_rules(_project("residential", finish_level="luxury"), set())
+        assert std_items == lux_items
+
+
 # ── Cross-contamination guard ──────────────────────────────────────────────────
 
 class TestCrossContamination:

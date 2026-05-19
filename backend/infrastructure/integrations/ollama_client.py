@@ -68,6 +68,7 @@ def chat(
     messages: list[dict],
     model: str | None = None,
     stream: bool = False,
+    options: dict | None = None,
 ) -> str:
     """Send a chat completion request to Ollama cloud and return the response text."""
     client = _get_client()
@@ -78,6 +79,7 @@ def chat(
             model=model_name,
             messages=messages,
             stream=stream,
+            options=options,
         )
         return _consume_stream(response) if stream else _extract_content(response)
     except Exception as exc:  # noqa: BLE001

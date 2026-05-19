@@ -131,8 +131,15 @@ def _execute_boq_generation(
         {"role": "system", "content": _SYSTEM_PROMPT},
         {"role": "user", "content": prompt},
     ]
+    # High-thinking options: low temperature for analytical precision,
+    # large context window so the model can reason over the full prompt.
+    _reasoning_options = {
+        "temperature": 0.1,
+        "num_ctx": 8192,
+        "top_p": 0.9,
+    }
     start_time = time.time()
-    content = chat(messages, stream=True)
+    content = chat(messages, stream=True, options=_reasoning_options)
     elapsed = time.time() - start_time
     logger.info("LLM %s BOQ generation took: %.2f seconds", log_label, elapsed)
     

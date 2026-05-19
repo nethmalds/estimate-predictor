@@ -9,6 +9,7 @@ services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
+    profiles: [infra]
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -27,6 +28,7 @@ services:
   chroma:
     image: chromadb/chroma:0.5.5
     restart: unless-stopped
+    profiles: [infra]
     environment:
       IS_PERSISTENT: "TRUE"
       PERSIST_DIRECTORY: /chroma/chroma
@@ -43,6 +45,7 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    profiles: [infra]
     command: redis-server --save "" --appendonly no --maxmemory 128mb --maxmemory-policy allkeys-lru
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -57,19 +60,17 @@ services:
       context: ./backend
       dockerfile: docker/Dockerfile
     restart: unless-stopped
-    depends_on:
-      postgres: { condition: service_healthy }
-      chroma:   { condition: service_healthy }
-      redis:    { condition: service_healthy }
     environment:
       ENV: production
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: 5432
+      POSTGRES_HOST: ${POSTGRES_HOST}
+      POSTGRES_PORT: ${POSTGRES_PORT}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
-      CHROMA_HOST: chroma
-      CHROMA_PORT: 8000
+      CHROMA_HOST: ${CHROMA_HOST}
+      CHROMA_PORT: ${CHROMA_PORT}
+      CHROMA_COLLECTION: ${CHROMA_COLLECTION}
+      CHROMA_SSL: ${CHROMA_SSL:-false}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL}
       RETRIEVAL_TOP_K: ${RETRIEVAL_TOP_K}
       MIN_CONFIDENCE_THRESHOLD: ${MIN_CONFIDENCE_THRESHOLD}
@@ -100,11 +101,18 @@ services:
       args:
         # NEW: NEXT_PUBLIC_* must be set at build time (inlined by Next.js compiler)
         NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL}
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL}
     restart: unless-stopped
     depends_on: [backend]
     environment:
       AUTH_SECRET: ${AUTH_SECRET}
       UPLOADTHING_TOKEN: ${UPLOADTHING_TOKEN}
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL}
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL}
+      # Server-side API calls (e.g. auth authorize callback) bypass Caddy and hit the backend directly
+      API_BASE_URL: "http://backend:8000"
+      # Bind to all interfaces so the health check (localhost:3000) and Caddy (frontend:3000) both work
+      HOSTNAME: "0.0.0.0"
     networks: [estimator_net]
 
   # ── Caddy reverse proxy + auto-TLS ─────────────────────────────────────────
@@ -117,8 +125,8 @@ services:
       - "443:443"
     depends_on: [backend, frontend]
     environment:
-      # NEW: Set DOMAIN=:80 in .env for local/VPN-only no-TLS runs
-      DOMAIN: ${DOMAIN:-:80}
+      # NEW: Set DOMAIN=http://estimate for a single-label HTTP host
+      DOMAIN: ${DOMAIN:-http://estimate}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data

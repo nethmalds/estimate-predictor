@@ -115,17 +115,43 @@ UPLOADTHING_TOKEN=<your uploadthing token>
 
 ### Backend
 
+Create the virtual environment and install **all** Python dependencies into it:
+
 ```bash
 cd backend
 python -m venv .venv
+```
 
-# Windows
+Then install requirements **inside** the venv. Choose one approach:
+
+**Option A — Activate first, then install (interactive sessions):**
+
+```bash
+# Windows (Git Bash / PowerShell)
 .venv\Scripts\activate
 
 # macOS / Linux
 source .venv/bin/activate
 
 pip install -r requirements.txt
+```
+
+**Option B — Install directly without activating (recommended for scripts/CI):**
+
+```bash
+# Windows
+.venv\Scripts\pip.exe install -r requirements.txt
+
+# macOS / Linux
+.venv/bin/pip install -r requirements.txt
+```
+
+> [!IMPORTANT]
+> Always install `requirements.txt` **into the venv**, not into your system Python.
+> If you skip this step or install into the wrong environment, `dev.sh` will fail with
+> `ModuleNotFoundError: No module named 'sqlalchemy'` (or similar) when seeding the database.
+
+```bash
 cd ..
 ```
 
@@ -152,10 +178,10 @@ A single script starts everything: Docker infra, backend, frontend, migrations, 
 This will:
 1. Start Postgres, ChromaDB, Redis via Docker
 2. Wait for Postgres to be healthy
-3. Run Alembic DB migrations
-4. Seed categories into the database
-5. Ingest BSR PDF data (skipped automatically if already done)
-6. Start the FastAPI backend on `http://localhost:8000`
+3. Start the FastAPI backend on `http://localhost:8000` (runs Alembic DB migrations on startup)
+4. Wait for the backend to be healthy
+5. Seed categories into the database
+6. Ingest BSR PDF data (skipped automatically if already done)
 7. Start the Next.js frontend on `http://localhost:3000`
 
 Press `Ctrl+C` to stop the backend and frontend (Docker infra keeps running).
