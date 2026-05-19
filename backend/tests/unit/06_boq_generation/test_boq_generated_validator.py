@@ -81,6 +81,8 @@ class TestStructuralErrors:
 # Warning-level checks
 # ---------------------------------------------------------------------------
 
+# ── BE-TC-033: BOQ validator flags items with missing units ──────────────────
+
 class TestWarnings:
     def test_missing_preferred_unit_produces_warning(self):
         items = [_item(preferred_unit=""), _prelim()]

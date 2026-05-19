@@ -36,7 +36,7 @@ def _base(building_type="residential", overrides=None):
     return payload
 
 
-# ── Residential normalization ──────────────────────────────────────────────────
+# ── BE-TC-072: Residential wizard payload maps bedrooms and bathrooms ─────────
 
 class TestResidentialNormalization:
     def test_bedrooms_in_parameters(self):
@@ -56,7 +56,7 @@ class TestResidentialNormalization:
         assert result["floors"] == 2
 
 
-# ── Commercial normalization ───────────────────────────────────────────────────
+# ── BE-TC-073: Commercial payload excludes residential-only fields ────────────
 
 class TestCommercialNormalization:
     def test_primary_use_type_in_parameters(self):
@@ -128,7 +128,7 @@ class TestQSFieldsAbsent:
         assert "construction_scope" not in result.get("qs_specifications", {})
 
 
-# ── Floor area calculation ─────────────────────────────────────────────────────
+# ── BE-TC-074: sqft floor area is converted to m² ────────────────────────────
 
 class TestFloorAreaCalculation:
     def test_single_m2_floor_area(self):
@@ -151,7 +151,7 @@ class TestFloorAreaCalculation:
         assert float(str(area_raw).split()[0]) > 0
 
 
-# ── Provenance and defaults semantics ─────────────────────────────────────────
+# ── BE-TC-075: User-provided fields appear in explicit_parameters and value_sources ──
 
 class TestProvenanceSemantics:
     def test_applied_defaults_empty_after_normalize(self):

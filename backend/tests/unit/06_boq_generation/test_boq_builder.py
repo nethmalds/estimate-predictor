@@ -61,6 +61,8 @@ def _make_raw_items(descriptions, category="concrete_works"):
 # Stage-order and provenance tests
 # ---------------------------------------------------------------------------
 
+# ── BE-TC-031 & 032: BOQ generation — non-empty list and required fields ──────
+
 class TestBuildFinalBoqItemsStageOrder:
     """Verify stage order: LLM baseline (standalone) → Item Predictor → LLM gap-fill."""
 

@@ -34,7 +34,54 @@ def _patch_svc(monkeypatch, method: str, return_value):
     return original_cls
 
 
-# ── Auth gating ────────────────────────────────────────────────────────────────
+# ── BE-TC-004: Cross-user ownership isolation ─────────────────────────────────
+
+class TestCrossUserIsolation:
+    """Verify that users cannot access another user's estimates."""
+
+    async def test_other_user_estimate_returns_404(self, async_client, monkeypatch):
+        # EstimateService raises 404 when the estimate does not belong to the requesting user
+        from fastapi import HTTPException
+
+        import app.api.controllers.estimates_controller as ctrl
+
+        class _Svc:
+            def __init__(self, db): pass
+            def get_estimate(self, estimate_id, user_id):
+                raise HTTPException(status_code=404, detail="Estimate not found.")
+
+        monkeypatch.setattr(ctrl, "EstimateService", _Svc)
+
+        resp = await async_client.get(
+            "/api/estimates/11111111-2222-3333-4444-555555555555"
+        )
+        assert resp.status_code == 404
+
+    async def test_own_estimate_is_accessible(self, async_client, monkeypatch):
+        expected = {
+            "id": "11111111-2222-3333-4444-555555555555",
+            "project_name": "My Build",
+            "status": "completed",
+            "result": {},
+            "project_info": {},
+            "confidence": 0.85,
+            "grand_total": 5000000.0,
+            "item_count": 30,
+            "created_at": "2026-01-01T00:00:00+00:00",
+            "updated_at": "2026-01-01T00:00:00+00:00",
+            "notes": None,
+            "progress": None,
+            "error_message": None,
+            "cancelled_at": None,
+            "regenerated_from_estimate_id": None,
+            "wizard_payload": None,
+        }
+        _patch_svc(monkeypatch, "get_estimate", expected)
+        resp = await async_client.get("/api/estimates/11111111-2222-3333-4444-555555555555")
+        assert resp.status_code == 200
+
+
+# ── BE-TC-021: Unauthenticated list request is rejected ──────────────────────
 
 class TestAuthGating:
     async def test_list_estimates_requires_auth(self, unauthed_client):
@@ -58,7 +105,7 @@ class TestAuthGating:
         assert resp.status_code == 401
 
 
-# ── List ──────────────────────────────────────────────────────────────────────
+# ── BE-TC-020 & 022: List estimates — paginated shape and params ──────────────
 
 class TestListEstimates:
     async def test_returns_paginated_shape(self, async_client, monkeypatch):
@@ -85,7 +132,7 @@ class TestListEstimates:
         assert resp.status_code == 422
 
 
-# ── Detail ────────────────────────────────────────────────────────────────────
+# ── BE-TC-024 & 023: Get estimate — not found and found shape ────────────────
 
 class TestGetEstimate:
     async def test_not_found_raises_404(self, async_client, monkeypatch):
@@ -133,7 +180,7 @@ class TestGetEstimate:
         assert body["status"] == "completed"
 
 
-# ── Patch ─────────────────────────────────────────────────────────────────────
+# ── BE-TC-025: Patch estimate returns updated fields ─────────────────────────
 
 class TestPatchEstimate:
     async def test_returns_updated_fields(self, async_client, monkeypatch):
@@ -153,7 +200,7 @@ class TestPatchEstimate:
         assert body["project_name"] == "Renamed Build"
 
 
-# ── Delete ────────────────────────────────────────────────────────────────────
+# ── BE-TC-027: Delete estimate returns confirmation message ──────────────────
 
 class TestDeleteEstimate:
     async def test_returns_confirmation_message(self, async_client, monkeypatch):
@@ -164,7 +211,7 @@ class TestDeleteEstimate:
         assert resp.json()["message"] == "Estimate deleted."
 
 
-# ── Dashboard ─────────────────────────────────────────────────────────────────
+# ── BE-TC-029: Dashboard summary returns required keys ───────────────────────
 
 class TestDashboardSummary:
     async def test_returns_required_keys(self, async_client, monkeypatch):

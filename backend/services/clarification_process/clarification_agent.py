@@ -8,6 +8,8 @@ flow have been removed as the frontend no longer has a chat interface.
 """
 from typing import Any
 
+from services.shared.floor_scope import normalize_floor_label
+
 
 # ─── Canonical enum definitions ───────────────────────────────────────────────
 # Used by the wizard frontend to populate dropdowns.
@@ -84,26 +86,46 @@ def derive_floor_areas_total(floor_areas: list[dict]) -> dict:
         {
             "total_m2": float,
             "total_sqft": float,
-            "built_up_area_compat": str,   # e.g. "2300 sqft"
+            "built_up_area_compat": str,        # e.g. "2300 sqft"
+            "per_floor_m2": dict[str, float],   # {"ground": 117.5, "first": 117.5}
+            "label_fallbacks": list[str],       # rows where label fell back to index
         }
+
+    ``per_floor_m2`` is keyed by canonical floor-scope token derived from
+    ``floor_label`` (e.g. "Ground Floor" -> "ground").  When a label has no
+    recognisable floor token the key falls back to the indexed ordinal
+    ("ground" for index 0, "first" for index 1, ...).
     """
     total_m2 = 0.0
     total_sqft = 0.0
-    for row in floor_areas:
+    per_floor_m2: dict[str, float] = {}
+    label_fallbacks: list[str] = []
+    for i, row in enumerate(floor_areas):
         value = float(row.get("area_value", 0) or 0)
         unit = str(row.get("area_unit", "sqft")).lower().strip()
         if unit in {"m2", "m²"}:
-            total_m2 += value
-            total_sqft += value / 0.0929
+            row_m2 = value
         else:  # default sqft
-            total_sqft += value
-            total_m2 += value * 0.0929
+            row_m2 = value * 0.0929
+
+        total_m2 += row_m2
+        total_sqft += row_m2 / 0.0929 if unit in {"m2", "m²"} else value
+
+        label_raw = str(row.get("floor_label") or "")
+        scope_key = normalize_floor_label(label_raw, index=i)
+        # Track when normalize fell back to indexed naming (label had no canonical token)
+        from services.shared.floor_scope import parse_floor_scope as _parse
+        if label_raw and _parse(label_raw) == "all":
+            label_fallbacks.append(f"row {i} label '{label_raw}' -> '{scope_key}'")
+        per_floor_m2[scope_key] = round(per_floor_m2.get(scope_key, 0.0) + row_m2, 2)
 
     compat = f"{total_sqft:.0f} sqft" if total_sqft > 0 else "0 sqft"
     return {
         "total_m2": round(total_m2, 2),
         "total_sqft": round(total_sqft, 2),
         "built_up_area_compat": compat,
+        "per_floor_m2": per_floor_m2,
+        "label_fallbacks": label_fallbacks,
     }
 
 
@@ -201,6 +223,10 @@ def normalize_wizard_to_project_info(payload: dict) -> dict:
         preprocessing_warnings.append("structural_system not provided — will use default.")
     if not payload.get("location"):
         preprocessing_warnings.append("location not provided — defaulting to Colombo.")
+    for fallback_note in area_totals.get("label_fallbacks", []) or []:
+        preprocessing_warnings.append(
+            f"floor label fallback — {fallback_note} (used indexed ordinal)."
+        )
 
     return {
         "building_type":          building_type,
@@ -208,6 +234,7 @@ def normalize_wizard_to_project_info(payload: dict) -> dict:
         "spaces":                 [],
         "parameters":             parameters,
         "floor_areas":            floor_areas,
+        "per_floor_area_m2":      area_totals["per_floor_m2"],
         "qs_specifications":      {},
         "explicit_parameters":    explicit_parameters,
         "assumptions":            [],

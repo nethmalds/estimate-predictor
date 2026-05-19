@@ -12,10 +12,13 @@
 
 import { ApiError } from "@/types/api";
 
-const BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000").replace(
-  /\/$/,
-  ""
-);
+// Server-side (Node.js inside Docker): use the internal service URL to bypass Caddy.
+// Client-side (browser): use the public URL through Caddy.
+const BASE_URL = (
+  typeof window === "undefined"
+    ? (process.env.API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000")
+    : (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000")
+).replace(/\/$/, "");
 
 // ---------------------------------------------------------------------------
 // Error extraction — handles FastAPI's various error shapes

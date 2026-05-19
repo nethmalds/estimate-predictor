@@ -36,11 +36,13 @@ class FormService:
     ):
         """Return a thread-safe callback that pushes progress events and persists snapshots."""
         # Track cumulative progress so we can persist the full snapshot each call.
-        completed_steps: list[dict] = []
+        # Dict keyed by step name so later events (e.g. "completed") overwrite
+        # earlier ones (e.g. "started") — prevents UI from getting stuck on "active".
+        completed_steps: dict[str, dict] = {}
 
         def _progress(step: str, status: str, data: dict | None) -> None:
             step_entry = {"step": step, "status": status, **(data or {})}
-            completed_steps.append(step_entry)
+            completed_steps[step] = step_entry
 
             event = {
                 "event": "progress",
@@ -59,7 +61,7 @@ class FormService:
                         Estimate.id == uuid.UUID(estimate_id)
                     ).first()
                     if est:
-                        est.progress = {"steps": list(completed_steps)}
+                        est.progress = {"steps": list(completed_steps.values())}
                         db.commit()
                 finally:
                     db.close()

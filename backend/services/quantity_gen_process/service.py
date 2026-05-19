@@ -33,6 +33,7 @@ from services.quantity_gen_process.confidence_scoring import (
     candidate_weight,
 )
 from services.quantity_gen_process.quantity_validator import validate_quantity
+from services.shared.floor_scope import parse_floor_scope, strip_scope_tokens
 
 
 # Categories whose quantity is a QS convention (lump sum = 1.0) — skip ML fusion.
@@ -151,6 +152,10 @@ def compute_quantities(
         result = _compute_with_geometry(boq_items, project_info, floorplan_geometry, floors, parameters)
     else:
         result = _compute_quantity_predictor_all(boq_items, project_info)
+
+    # Floor-scope allocation: split duplicated whole-building quantities across
+    # per-floor / per-variant sibling items so the group sums to the correct total.
+    result = _allocate_floor_scoped_quantities(result, project_info)
 
     # IMP-QTY-02: validate each item's quantity against its BSR unit dimensionality
     return [_validate_quantity_against_unit(item) for item in result]
@@ -568,3 +573,215 @@ def _build_reconciliation_summary(
         "reconciliation_reason": reason,
         "review_flags":         review_flags,
     }
+
+
+# ---------------------------------------------------------------------------
+# Floor-scope quantity allocation
+# ---------------------------------------------------------------------------
+# When the rule-based / parametric / ML calculator produces a whole-building
+# quantity, the LLM may have emitted N per-floor variant items, each receiving
+# the same (whole-building) quantity.  This pass detects the bug signature
+# (sibling items with near-identical quantities) and redistributes the shared
+# total across them using per-floor area ratios, QS heuristic weights, or an
+# equal split as a final fallback.
+
+# Categories that are inherently whole-building (not per-floor) — never split.
+_NON_FLOOR_SPLIT_CATEGORIES: frozenset[str] = frozenset({
+    "roofing_and_ceiling",
+    "piling_and_substructure",
+    "excavation_and_earthwork",
+    "external_and_civil_works",
+    "preliminary_and_general",
+    "demolition_and_removal",
+    "testing_and_commissioning",
+    "miscellaneous",
+})
+
+# A group is considered over-counted when its sum exceeds the single-pass
+# whole-building reference by more than this factor.  15 % is enough to
+# absorb ML variance while still catching N× duplication.
+_ALLOCATION_OVERCOUNT_THRESHOLD = 1.15
+
+
+def _allocate_floor_scoped_quantities(
+    items: list[dict],
+    project_info: dict,
+) -> list[dict]:
+    """Redistribute whole-building quantities across per-floor / per-variant siblings.
+
+    The rule-based / parametric / ML calculator produces a whole-building
+    quantity for items like brick masonry.  When the LLM has split those into
+    N floor-variant lines (e.g. ground/first floor × external/internal walls),
+    every sibling receives the same number, causing N× over-counting in the
+    BOQ total.
+
+    This pass groups items by ``(category, strip_scope_tokens(description))``
+    and, for groups whose computed quantities are equal within
+    ``_ALLOCATION_EQUALITY_EPSILON``, redistributes the shared total across
+    siblings using a weight vector built from:
+      1. Per-floor area ratios (preferred — uses real data),
+      2. ``_get_qs_weight`` heuristics (external/internal, 9"/4.5", …),
+      3. Multiplicative combination of (1) × (2) when both axes vary,
+      4. Equal split as final fallback.
+
+    Allocation is skipped for lump-sum / discrete-count / inherently whole-
+    building categories, and for items that have already been globally
+    allocated by the ML predictor distribution path.
+    """
+    floor_count = max(int(project_info.get("floors") or 1), 1)
+    per_floor_area_m2: dict[str, float] = project_info.get("per_floor_area_m2") or {}
+
+    # ── Group items by signature (category + scope-stripped description) ───────
+    groups: dict[tuple[str, str], list[dict]] = {}
+    for item in items:
+        category = (item.get("category") or "misc").lower()
+        if category in _NON_FLOOR_SPLIT_CATEGORIES:
+            continue
+        if (item.get("unit_kind") or "").lower() == "discrete":
+            continue
+
+        # Note: we deliberately do not skip items that went through the existing
+        # ML global-allocation distribution path.  That path splits an ML
+        # category-total across siblings then fuses each with the parametric
+        # whole-building number — which inflates per-item quantities back to
+        # near whole-building scale.  The over-count gate below catches this
+        # uniformly regardless of upstream pathway.
+
+        sig_key = (category, strip_scope_tokens(item.get("description") or ""))
+        groups.setdefault(sig_key, []).append(item)
+
+    # ── Process each group ────────────────────────────────────────────────────
+    for (category, _sig), group in groups.items():
+        if len(group) < 2:
+            continue
+
+        quantities = [float(it.get("quantity") or 0.0) for it in group]
+        if any(q <= 0 for q in quantities):
+            continue
+        group_sum = sum(quantities)
+        mean_q = group_sum / len(group)
+        spread = (max(quantities) - min(quantities)) / max(mean_q, 1.0)
+
+        # Compute the single-pass whole-building reference quantity for this
+        # category by running calculate_parametric on a description-neutral
+        # copy of the first item.
+        ref_item = dict(group[0])
+        ref_item["description"] = strip_scope_tokens(group[0].get("description") or "")
+        whole_qty, _ = calculate_parametric(ref_item, project_info)
+        if whole_qty is None or whole_qty <= 0:
+            # No reference available — fall back to using mean of group as total.
+            whole_qty = group_sum / len(group)
+
+        floor_scopes = [str(it.get("floor_scope") or "all") for it in group]
+        descriptions = [str(it.get("description") or "") for it in group]
+
+        # ── Allocation triggers ────────────────────────────────────────────────
+        # (a) Over-count: group sum vastly exceeds whole-building reference.
+        over_counted = group_sum > whole_qty * _ALLOCATION_OVERCOUNT_THRESHOLD
+
+        # (b) Lost per-floor differentiation: items have distinct floor scopes
+        # AND per_floor_area_m2 has differing values for them AND items are
+        # near-equal in quantity.  The calculator never produces per-floor
+        # differentiated quantities, so equal items here mean the per-floor
+        # split was lost and needs to be reapplied.
+        distinct_floors = [fs for fs in floor_scopes if fs != "all"]
+        floor_area_known = bool(per_floor_area_m2) and all(
+            fs in per_floor_area_m2 for fs in distinct_floors
+        )
+        floor_areas_asymmetric = (
+            floor_area_known
+            and len(distinct_floors) > 1
+            and len({round(per_floor_area_m2.get(fs, 0.0), 2) for fs in distinct_floors}) > 1
+        )
+        lost_per_floor_split = floor_areas_asymmetric and spread < 0.10
+
+        if not (over_counted or lost_per_floor_split):
+            continue
+
+        # Choose total: when over-counted, redistribute the authoritative whole-
+        # building reference.  When the per-floor split was merely lost (sum is
+        # already correct), keep the existing group sum and just re-distribute.
+        total = whole_qty if over_counted else group_sum
+
+        # ── Build weight vectors ──────────────────────────────────────────────
+        floor_weights: list[float] | None = None
+        all_have_floor = all(fs != "all" for fs in floor_scopes)
+        if all_have_floor and per_floor_area_m2 and all(
+            fs in per_floor_area_m2 for fs in floor_scopes
+        ):
+            floor_weights = [per_floor_area_m2[fs] for fs in floor_scopes]
+
+        qs_weights = [_get_qs_weight(category, desc) for desc in descriptions]
+        qs_varies = len(set(qs_weights)) > 1
+
+        # Decision tree
+        if floor_weights is not None and qs_varies:
+            combined = [fw * qw for fw, qw in zip(floor_weights, qs_weights)]
+            method = "per_floor_area_x_qs_weight"
+            weights = combined
+        elif floor_weights is not None:
+            method = "per_floor_area"
+            weights = floor_weights
+        elif qs_varies:
+            method = "qs_weight"
+            weights = qs_weights
+        else:
+            method = "equal_split"
+            weights = [1.0] * len(group)
+
+        weight_sum = sum(weights)
+        if weight_sum <= 0:
+            method = "equal_split"
+            weights = [1.0] * len(group)
+            weight_sum = float(len(group))
+
+        # ── Distribute ────────────────────────────────────────────────────────
+        for item, w in zip(group, weights):
+            allocated = round(total * (w / weight_sum), 2)
+            item["quantity"] = allocated
+            item["final_quantity"] = allocated
+            item["quantity_allocation_method"] = method
+
+            # Transparency: append an allocation candidate entry.
+            cands = item.setdefault("quantity_candidates", [])
+            cands.append({
+                "candidate_type": "allocation",
+                "method": method,
+                "quantity": allocated,
+                "unit": item.get("unit") or item.get("preferred_unit") or "",
+                "confidence": 0.75,
+                "assumptions": [
+                    f"floor_scope={item.get('floor_scope') or 'all'}",
+                    f"group_size={len(group)}",
+                    f"weight={round(w / weight_sum, 4)}",
+                ],
+                "diagnostics": {"whole_building_total": total},
+                "requires_review": False,
+                "source_payload": {"source": "floor_scope_allocation"},
+            })
+
+            # Reconciliation summary: append an allocation note.
+            recon = item.setdefault("reconciliation_summary", {})
+            recon["allocation_note"] = (
+                f"Whole-building quantity {total} split across {len(group)} sibling items "
+                f"using {method}; this item received {allocated} "
+                f"({round(100 * w / weight_sum, 1)}%)."
+            )
+
+        # Sanity: when the LLM emitted a per-floor count that doesn't match
+        # floor_count × expected_variants, flag every item in the group.
+        distinct_floors = {fs for fs in floor_scopes if fs != "all"}
+        if distinct_floors and len(distinct_floors) != floor_count:
+            mismatch_note = (
+                f"per-floor item count ({len(distinct_floors)} distinct floors) "
+                f"does not match project floor_count ({floor_count}); review allocations."
+            )
+            for item in group:
+                item["needs_rate_review"] = True
+                existing = item.get("quantity_warning") or ""
+                item["quantity_warning"] = (
+                    (existing + " | " + mismatch_note).strip(" | ")
+                    if existing else mismatch_note
+                )
+
+    return items

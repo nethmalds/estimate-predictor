@@ -30,7 +30,7 @@ def _base(overrides: dict | None = None) -> dict:
     return base
 
 
-# ── Valid payload tests ────────────────────────────────────────────────────────
+# ── BE-TC-076: Valid residential payload passes clarification validation ───────
 
 class TestValidPayloads:
     def test_valid_residential_payload(self):
@@ -137,4 +137,16 @@ class TestCommercialValidation:
             "building_type": "commercial",
             "washroom_count": 1,
         }))
+        assert "washroom_count" not in errors
+
+    def test_commercial_valid_payload_with_primary_use_type_passes(self):
+        # BE-TC-077: complete commercial payload (with primary_use_type) passes
+        # Note: validate_wizard_payload validates washroom_count but not
+        # primary_use_type directly; HTTP endpoint layer handles that check.
+        errors = validate_wizard_payload(_base({
+            "building_type": "commercial",
+            "primary_use_type": "Office",
+            "washroom_count": 2,
+        }))
+        # washroom_count is present and valid — no washroom error expected
         assert "washroom_count" not in errors

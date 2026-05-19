@@ -24,6 +24,20 @@ os.environ.setdefault("RETRIEVAL_TOP_K", "5")
 os.environ.setdefault("MIN_CONFIDENCE_THRESHOLD", "0.5")
 os.environ.setdefault("ENV", "development")
 
+# Load the TEST_PLAN.md auto-updater plugin by file path (no __init__.py needed).
+# Pytest discovers hooks by name, so importing them here is equivalent to
+# having them directly in conftest.py.
+import importlib.util as _ilu
+_spec = _ilu.spec_from_file_location(
+    "test_plan_updater",
+    Path(__file__).resolve().parent / "test_plan_updater.py",
+)
+_updater = _ilu.module_from_spec(_spec)  # type: ignore[arg-type]
+_spec.loader.exec_module(_updater)       # type: ignore[union-attr]
+pytest_sessionstart      = _updater.pytest_sessionstart
+pytest_runtest_logreport = _updater.pytest_runtest_logreport
+pytest_sessionfinish     = _updater.pytest_sessionfinish
+
 import jwt  # noqa: E402
 import pytest  # noqa: E402
 import pytest_asyncio  # noqa: E402

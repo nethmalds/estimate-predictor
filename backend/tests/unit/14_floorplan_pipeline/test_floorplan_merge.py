@@ -30,6 +30,8 @@ def _geom(area=100.0, perimeter=40.0, walls=55.0, openings=4, rooms=3,
     }
 
 
+# ── BE-TC-080: Geometry merger sums areas across floors ──────────────────────
+
 class TestMergeFloorplanGeometries:
     def test_empty_list_returns_empty_dict(self):
         assert _merge_floorplan_geometries([]) == {}

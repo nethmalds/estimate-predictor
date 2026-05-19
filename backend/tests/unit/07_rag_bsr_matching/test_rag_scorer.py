@@ -48,6 +48,8 @@ def _candidate(
     )
 
 
+# ── BE-TC-038 & 039: RAG scorer — work type scoring and bounded confidence ────
+
 class TestScoreCandidate:
     def test_returns_required_keys(self):
         result = score_candidate(_features(), _candidate(), vector_score=0.8)
