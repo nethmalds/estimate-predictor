@@ -57,7 +57,23 @@ Heuristic flags: `assumed_floor_height=True`, all others `False` → p_heuristic
 |--------------------|----------------|
 | `scale_source = "heuristic"` (0.20) | `scale_source = "detector"` (0.60) — YOLO found 11 zones |
 | `c_det ≈ 0.65` | `c_det = 0.6887` (measured) |
-| OCR error raises exception → `_ocr_succeeded = False` | OCR module swallows `TesseractNotFoundError` internally; `_ocr_succeeded = True` is misleading — it means "no exception propagated", not "dims found" |
+| OCR error raises exception → `_ocr_succeeded = False` | OCR module returns `_ocr_skip_result(..., "tesseract_not_found")` (no exception). Orchestrator's `_ocr_succeeded = True` because no exception propagated, but `ocr_result["ocr_skipped"]` is `True` — the success flag does NOT mean "dims found". Callers must check `ocr_result.get("ocr_skipped")` or `len(dimensions_raw) > 0`. |
+
+---
+
+## Already shipped (resilience scaffolding, 2026-05-20)
+
+Commit `f8a9433` landed resilience scaffolding for the pipeline but did NOT implement any of the confidence-maximisation work below. Changes A–F are all still pending. The scaffolding affects how A–C plug in:
+
+| Already in place | File | Reuse in this plan |
+|------------------|------|--------------------|
+| `_placeholder_geometry(skip_reason)` | `orchestrator.py:66` | Returned on download/PDF/preprocess failures — no change needed |
+| `_ocr_skip_result(image_file, reason)` | `ocr.py:31` | Change A reuses this as the last-resort fallback when vision API also fails |
+| Try/except wrappers around preprocess, OCR, YOLO | `orchestrator.py:163-204` | Change A/B/C edits land INSIDE these blocks, not around them |
+| `_ocr_succeeded`, `_yolo_succeeded` flags | `orchestrator.py:174,190` | Read but do NOT reflect dimension presence; cross-check with `ocr_result["ocr_skipped"]` |
+| `_log` (module logger) | `orchestrator.py:47` | Use instead of `print`/`warnings.warn` for new code paths |
+| `test_orchestrator_resilience.py` (284 lines) | `tests/unit/14_floorplan_pipeline/` | Extend with NEW test classes; do not modify existing resilience classes |
+| `test_yolo_degradation.py` (215 lines) | `tests/unit/14_floorplan_pipeline/` | Unchanged — YOLO degradation is a separate concern |
 
 ---
 
@@ -87,7 +103,10 @@ Scale source scores: `ocr_confirmed=1.00` · `ocr_dimensions=0.80` · `detector=
 **File:** `backend/services/floorplan_process/geometry_extraction/ocr.py`
 
 #### What
-When Tesseract raises `TesseractNotFoundError` (caught at line 63), instead of immediately returning `_ocr_skip_result()`, call the configured LLM API with the floor plan image and extract dimension text from the response.
+When Tesseract raises `TesseractNotFoundError` (caught at [ocr.py:63](backend/services/floorplan_process/geometry_extraction/ocr.py#L63)), instead of immediately returning `_ocr_skip_result()`, call the configured LLM API with the floor plan image and extract dimension text from the response. `_ocr_skip_result` is preserved as the last-resort fallback for when vision also fails.
+
+#### Image input
+After Change C, `image_path` passed to `extract_floorplan_text_and_dimensions` will already be the **preprocessed** (greyscale + binarised + upscaled) path. The vision API receives the same file. Open question: vision models may perform better on the ORIGINAL image (richer information) than the binarised one. Resolution: also stash `original_path` in the OCR call so Change A can call vision against the original even when Tesseract sees the processed copy. Add an `original_path` kwarg to `extract_floorplan_text_and_dimensions(image_path, original_path=None)` with default `original_path = image_path`.
 
 #### How
 
@@ -136,7 +155,71 @@ except pytesseract.TesseractNotFoundError:
 
 #### Additional fix — Room label extraction (found during live run)
 
-YOLO detects 11 zones but all are labelled `"zone"` because the orchestrator never maps OCR text to zone bounding boxes. Extend the vision-API response to also return room name→dimension pairs, then match each YOLO zone centroid to the nearest OCR label string. This populates `rooms[].label` with real names (`"Bedroom 1"`, `"Family Room"`, etc.) for the BOQ and report without touching the confidence formula.
+YOLO detects 11 zones but all are labelled `"zone"` because the orchestrator never maps OCR text to zone bounding boxes.
+
+**Vision prompt extension.** Extend the vision-API prompt to return JSON, not free text:
+```json
+[
+  {"name": "Bedroom 1", "dimension_label": "11'3\" x 8'11\"", "bbox": [x1, y1, x2, y2]},
+  ...
+]
+```
+The `bbox` is in pixel coordinates of the image sent. Parse with `json.loads` (in a try/except — fall back to line-by-line text parsing if the model returns non-JSON).
+
+**Centroid matching algorithm.**
+```python
+def _match_zones_to_labels(
+    yolo_zones: list[dict],   # each has "bbox_px" and label = "zone"
+    ocr_labels: list[dict],   # each has "name" and "bbox" from vision
+    img_w: int, img_h: int,
+) -> list[dict]:
+    """Greedy nearest-centroid matching with a distance threshold.
+
+    - Threshold = 10 % of image diagonal (calibrated for floor plans where
+      labels are inside the rooms they describe).
+    - Each OCR label can match at most one YOLO zone.
+    - Unmatched YOLO zones keep label = "zone".
+    """
+    import math
+    diag = math.hypot(img_w, img_h)
+    threshold = diag * 0.10
+
+    # Compute centroids once
+    label_centroids = [
+        ((l["bbox"][0] + l["bbox"][2]) / 2, (l["bbox"][1] + l["bbox"][3]) / 2)
+        for l in ocr_labels
+    ]
+    used: set[int] = set()
+    for zone in yolo_zones:
+        x1, y1, x2, y2 = zone["bbox_px"]
+        zx, zy = (x1 + x2) / 2, (y1 + y2) / 2
+        best, best_dist = None, threshold
+        for i, (lx, ly) in enumerate(label_centroids):
+            if i in used:
+                continue
+            d = math.hypot(zx - lx, zy - ly)
+            if d < best_dist:
+                best, best_dist = i, d
+        if best is not None:
+            zone["label"] = ocr_labels[best]["name"]
+            used.add(best)
+    return yolo_zones
+```
+
+**Edge cases:**
+- More YOLO zones than OCR labels (11 vs 8 in the verified case): unmatched zones retain `"zone"` — acceptable.
+- OCR label far from any zone: dropped silently (above threshold).
+- Two OCR labels close to the same zone: first-pass greedy wins; the other label is dropped. Document this — for floor plans, labels are inside rooms so collisions are rare.
+
+This populates `rooms[].label` with real names (`"Bedroom 1"`, `"Kitchen"`, …) for the BOQ and report without touching the confidence formula.
+
+#### Operational requirements (vision API)
+
+- **Timeout:** wrap `_call_llm_vision` with a 15-second timeout. On timeout, log a warning and return `_ocr_skip_result(image_file, "vision_timeout")`.
+- **Result caching:** SHA-256 the image bytes (first 24 hex chars) and cache the parsed vision response on disk at `backend/temp/vision_ocr_cache/<hash>.json`. Reuse for identical images. Same retention policy as `image_cache.py`.
+- **Circuit breaker:** module-level counter of consecutive vision failures; after 5 failures within 5 minutes, short-circuit straight to `_ocr_skip_result(image_file, "vision_circuit_open")` for 60 seconds. Avoids runaway spend during upstream outages.
+- **Cost note:** each uncached call costs ~$0.005–$0.05 depending on model. Cache hits are free. Document the expected per-estimate cost in the README so it's not a surprise in the bill.
+- **No async required:** orchestrator stays sync. If the vision call latency becomes a UX problem, move the whole pipeline to a background task and stream via existing SSE — do not partially async the orchestrator.
 
 #### Confidence impact
 - `c_ocr`: 0.0 → 1.0 (+**0.30** to score)
@@ -150,7 +233,7 @@ YOLO detects 11 zones but all are labelled `"zone"` because the orchestrator nev
 **File:** `backend/services/floorplan_process/orchestrator.py`
 
 #### Root cause
-`_infer_area_from_dimensions()` (line 323) uses regex `r"([\d.]+)\s*m\b"` — matches only metric suffixes. Tokens like `"11'3\""` and `"8'11\""` are silently dropped. `values_m` stays empty. Function returns `0.0`.
+`_infer_area_from_dimensions()` ([orchestrator.py:332](backend/services/floorplan_process/orchestrator.py#L332) — moved from line 323 by the resilience fix) uses regex `r"([\d.]+)\s*m\b"` — matches only metric suffixes. Tokens like `"11'3\""` and `"8'11\""` are silently dropped. `values_m` stays empty. Function returns `0.0`. Note: the OCR module's `_DIMENSION_PATTERNS` ([ocr.py:6-10](backend/services/floorplan_process/geometry_extraction/ocr.py#L6-L10)) DOES extract feet/inch tokens — they reach the orchestrator intact and get dropped here.
 
 #### Fix B1 — Parse feet/inches inside `_infer_area_from_dimensions()`
 
@@ -203,7 +286,7 @@ def _sum_room_areas_from_dimensions(dimensions: list[str]) -> float:
     return total
 ```
 
-Call priority in the orchestrator (lines 219–226):
+Call priority in the orchestrator ([orchestrator.py:220-229](backend/services/floorplan_process/orchestrator.py#L220-L229) — was lines 219–226 pre-fix):
 
 ```python
 # Try summing all room dimension pairs first
@@ -227,57 +310,77 @@ When vision OCR returns all 8 room dimension labels:
 **File:** `backend/services/floorplan_process/geometry_extraction/geometry_extractor.py`
 
 #### What
-`preprocess_image()` currently only validates the file exists and returns metadata. Add actual CV preprocessing before YOLO and OCR receive the image.
+`preprocess_image()` currently only validates the file exists and returns metadata. Add actual CV preprocessing before YOLO and OCR receive the image. **Original implementation used `tempfile.NamedTemporaryFile(delete=False)` next to the original — that leaks disk on every call.** Use a hash-keyed cache in the existing `_CACHE_DIR` so repeat preprocesses of the same image are O(1) cache hits.
 
 #### Steps
 
 ```python
 def preprocess_image(image_path: str) -> dict:
-    from PIL import Image, ImageFilter, ImageOps
-    import tempfile, os
+    import hashlib
+    from PIL import Image
 
     p = Path(image_path)
     if not p.exists():
         raise FileNotFoundError(f"Floor plan image not found: {image_path}")
 
+    image_bytes = p.read_bytes()
+    cache_key   = hashlib.sha256(image_bytes).hexdigest()[:24]
+
+    # Reuse the download cache directory so retention policy is shared
+    from services.floorplan_process.image_cache import _CACHE_DIR
+    _CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    processed_path = _CACHE_DIR / f"{cache_key}_processed{p.suffix or '.png'}"
+
     img = Image.open(p)
     original_size = img.size
 
-    # 1. Convert to greyscale
-    img = img.convert("L")
+    if not processed_path.exists():
+        # 1. Greyscale
+        img = img.convert("L")
 
-    # 2. Upscale if too small for YOLO (optimal input = 640 px)
-    if img.width < 640:
-        scale = 640 / img.width
-        img = img.resize(
-            (int(img.width * scale), int(img.height * scale)),
-            Image.LANCZOS,
-        )
+        # 2. Upscale if too small for YOLO (optimal input ≈ 640 px)
+        if img.width < 640:
+            scale = 640 / img.width
+            img = img.resize(
+                (int(img.width * scale), int(img.height * scale)),
+                Image.LANCZOS,
+            )
 
-    # 3. Adaptive threshold — binarise to black walls on white background
-    img = img.point(lambda px: 0 if px < 200 else 255, "L")
-
-    # Save processed copy alongside original
-    suffix = p.suffix
-    tmp = tempfile.NamedTemporaryFile(
-        suffix=suffix, prefix="fp_proc_", delete=False,
-        dir=p.parent,
-    )
-    img.save(tmp.name)
-    tmp.close()
+        # 3. Binarise — black walls on white background
+        img = img.point(lambda px: 0 if px < 200 else 255, "L")
+        img.save(processed_path)
 
     return {
-        "image_path": image_path,
-        "processed_path": tmp.name,   # <- orchestrator uses this for YOLO/OCR
-        "original_size": original_size,
+        "image_path":     image_path,
+        "processed_path": str(processed_path),
+        "original_size":  original_size,
         "processed_size": img.size,
-        "size_bytes": p.stat().st_size,
-        "format": p.suffix.lstrip("."),
-        "method": "preprocess_binarise",
+        "size_bytes":     p.stat().st_size,
+        "format":         p.suffix.lstrip("."),
+        "method":         "preprocess_binarise",
     }
 ```
 
-In `orchestrator.py`, use `preprocess.get("processed_path", image_path)` when calling OCR and YOLO.
+#### Wire into orchestrator call sites
+
+The orchestrator's resilience fallback (when `preprocess_image` raises, at [orchestrator.py:165-171](backend/services/floorplan_process/orchestrator.py#L165-L171)) currently produces a dict WITHOUT `processed_path`. Update the fallback so both paths produce the same shape:
+
+```python
+except Exception as exc:
+    warnings.warn(...)
+    preprocess = {
+        "image_path":     image_path,
+        "processed_path": image_path,   # <- NEW — falls back to original
+        "size_bytes":     0,
+        "format":         "unknown",
+        "method":         "failed",
+    }
+```
+
+Then call OCR ([orchestrator.py:176](backend/services/floorplan_process/orchestrator.py#L176)) and YOLO ([orchestrator.py:192-194](backend/services/floorplan_process/orchestrator.py#L192-L194)) with `preprocess["processed_path"]`. Vision API fallback in Change A also receives the same path (or the original — see Change A "Image input" note).
+
+#### Cache invalidation
+Same SHA-256 image bytes → same `processed_path`. Different bytes → different key. No deletion path needed — the cache directory shares retention with `image_cache.py`. If retention isn't implemented yet, add a TODO; do not block this change on it.
 
 #### Confidence impact
 - YOLO avg conf: ≈0.65 → ≈0.78 (+**0.03** to score)
@@ -518,51 +621,70 @@ Any exception in the Tier-2 block is caught and logged as a warning. Items pass 
 
 | Utility | File | Used in |
 |---------|------|---------|
-| `_DIMENSION_PATTERNS` + `_extract_dimensions()` | `ocr.py` line 6 | Change A — parse vision response |
-| `_ocr_skip_result()` | `ocr.py` | Change A — keep as last resort fallback |
+| `_DIMENSION_PATTERNS` + `_extract_dimensions()` | `ocr.py:6,24` | Change A — parse vision response |
+| `_ocr_skip_result()` | `ocr.py:31` (added by f8a9433) | Change A — last-resort fallback when vision also fails |
+| `_placeholder_geometry()` | `orchestrator.py:66` (added by f8a9433) | Reused by download/PDF resilience — Changes A–C do not touch it |
+| `_log` (module logger) | `orchestrator.py:47` (added by f8a9433) | Use for new code paths instead of `print`/`warnings.warn` |
+| `_CACHE_DIR` | `image_cache.py:19` | Change C — share preprocessing cache with download cache |
+| `download_and_cache()` | `image_cache.py:44` | Unchanged — URL resolution path |
 | `_load_model()` singleton | `quantity_calculator.py` | Change D |
 | `_CATEGORY_SLUG_MAP` | `quantity_calculator.py` line 123 | Change D |
-| Feature vector / completeness helpers | `quantity_calculator.py` | Change D |
-| Weight resolution logic in `_allocate_floor_scoped_quantities()` | `service.py` Phase 13 | Change E — extract into `_resolve_distribution_weights()` |
+| Feature vector / completeness helpers (`_compute_feature_completeness`) | `quantity_calculator.py:381,417` | Change D |
+| Weight resolution logic in `_allocate_floor_scoped_quantities()` | `service.py:606` Phase 13 | Change E — extract into `_resolve_distribution_weights()` |
 | `_geometry_is_usable()` | `service.py` | Unchanged — gating logic untouched |
 
 ---
 
 ## Testing Plan
 
-### New test file
-`backend/tests/unit/quantity_gen/test_category_distribution.py`
+### New test files
 
-| Test | Assertion |
-|------|-----------|
-| `test_predict_category_total_masonry` | Returns `category_total > 0`, `is_category_level = True`, `confidence ≤ 0.75` |
-| `test_predict_category_total_unknown_slug` | Returns `category_total = 0.0` without raising |
-| `test_distribute_equal_split` | When items have equal QS weight and same floor → equal split |
-| `test_distribute_qs_weight` | Items with different QS weights get proportional quantities |
-| `test_distribute_per_floor_area` | Items on different floors get quantities proportional to floor area |
-| `test_tier2_cascade_fires_on_global_allocation` | Service wires Tier-2 for items with `source == "global_allocation"` |
-| `test_tier2_cascade_skipped_on_model_failure` | Exception in `predict_category_total` → items pass through to Tier 3 unchanged |
+| File | Tests | Assertion |
+|------|-------|-----------|
+| `backend/tests/unit/08_quantity_estimation/test_category_distribution.py`<br>_(numbered folders per repo convention — NOT `quantity_gen/`)_ | `test_predict_category_total_masonry` | Returns `category_total > 0`, `is_category_level = True`, `confidence ≤ 0.75` |
+| | `test_predict_category_total_unknown_slug` | Returns `category_total = 0.0` without raising |
+| | `test_distribute_equal_split` | When items have equal QS weight and same floor → equal split |
+| | `test_distribute_qs_weight` | Items with different QS weights get proportional quantities |
+| | `test_distribute_per_floor_area` | Items on different floors get quantities proportional to floor area |
+| | `test_tier2_cascade_fires_on_global_allocation` | Service wires Tier-2 for items with `source == "global_allocation"` |
+| | `test_tier2_cascade_skipped_on_model_failure` | Exception in `predict_category_total` → items pass through to Tier 3 unchanged |
+| `backend/tests/unit/14_floorplan_pipeline/test_vision_ocr_fallback.py` | `test_vision_called_when_tesseract_missing` | Patch `pytesseract.image_to_string` to raise `TesseractNotFoundError`; assert `_call_llm_vision` is invoked and dimensions populated |
+| | `test_vision_response_cached` | Same image bytes → second call hits disk cache, never calls LLM |
+| | `test_vision_timeout_falls_back_to_skip_result` | LLM client times out → returns `_ocr_skip_result(..., "vision_timeout")` |
+| | `test_circuit_breaker_opens_after_5_failures` | After 5 consecutive failures, vision call is short-circuited for 60s |
+| | `test_vision_json_response_parsed` | Mock LLM returns valid JSON room list → dimensions and labels both extracted |
+| | `test_vision_non_json_response_falls_back_to_text_parse` | Mock LLM returns plain text → dimensions still extracted via existing `_DIMENSION_PATTERNS` |
+| | **CRITICAL:** all tests must mock `_call_llm_vision` — NEVER hit the real API in CI |
+| `backend/tests/unit/14_floorplan_pipeline/test_preprocess_cache.py` | `test_processed_path_deterministic` | Same image bytes → same `processed_path` across calls |
+| | `test_cache_hit_skips_pil_work` | Patch `PIL.Image.point`; verify it's NOT called when cached file exists |
+| | `test_fallback_returns_image_path_when_preprocess_fails` | Orchestrator's exception path: fallback dict's `processed_path == image_path` |
+| `backend/tests/unit/14_floorplan_pipeline/test_room_label_matching.py` | `test_centroid_matching_within_threshold` | 8 OCR labels, 11 YOLO zones → labels matched by proximity, extras stay `"zone"` |
+| | `test_no_match_when_label_far_from_zone` | Label centroid > 10% diagonal away → no match, zone stays `"zone"` |
+| | `test_one_label_per_zone` | Two labels close to same zone → first wins (greedy) |
 
-### Extend existing tests
+### Extend existing tests (add new classes — do NOT modify existing ones)
 
-| File | What to add |
-|------|-------------|
-| `test_orchestrator_resilience.py` | `_infer_area_from_dimensions()` with feet/inch tokens; `_sum_room_areas_from_dimensions()` with 8-room label list |
-| `test_floorplan_confidence_scorer.py` | Vision OCR path sets `c_ocr = 1.0`; preprocessing path returns `processed_path`; `ocr_confirmed` scale source achieved when both YOLO zones and imperial dims present |
+| File | Existing state | What to ADD |
+|------|----------------|-------------|
+| `test_orchestrator_resilience.py` | 284 lines, shipped in f8a9433. Existing classes cover YOLO failure, OCR failure, both-fail. **Do not modify these.** | New class `TestImperialDimensionParsing`: `_infer_area_from_dimensions()` with feet/inch tokens, mixed metric/imperial, malformed input. New class `TestRoomAreaSummation`: `_sum_room_areas_from_dimensions()` with 8-room label list, odd-count tokens, all-metric, all-imperial. |
+| `test_floorplan_confidence_scorer.py` | Existing scorer tests for `compute_geometry_confidence`. | Vision OCR path sets `c_ocr = 1.0`; preprocessing path returns `processed_path`; `ocr_confirmed` scale source achieved when both YOLO zones and imperial dims present. |
 
 ### End-to-end verification
 
-Baseline (live run, pre-fix): `geometry_confidence = 0.4172`, `scale_source = "detector"`, `dimensions_raw = []`, all rooms `"zone"`.
+Baseline (live run, pre-fix): `geometry_confidence = 0.4172`, `scale_source = "detector"`, `dimensions_raw = []`, all rooms `"zone"`. The post-fix resilience scaffolding does NOT change this baseline — confidence work is still pending.
 
-1. Run pipeline directly against `train.dir/image-processing/test/image6.jpg`:
+> **Note:** the verification image `train.dir/image-processing/test/image6.jpg` and runner script `C:\Temp\run_floorplan.py` live on the author's local machine, not in the repo. For a portable reproducer, commit a representative floor plan to `backend/tests/fixtures/floorplans/` and a `scripts/verify_floorplan.py` runner.
+
+1. Run pipeline directly against the verification image (local) or `backend/tests/fixtures/floorplans/sample.jpg` (CI):
    ```
-   python C:\Temp\run_floorplan.py
+   python scripts/verify_floorplan.py <image_path>
    ```
    Expected after fixes:
    - `geometry_confidence ≥ 0.75`
    - `scale_source = "ocr_confirmed"`
    - `dimensions_raw` non-empty (imperial tokens parsed)
    - `rooms[].label` contains actual names, not `"zone"`
+   - `_ocr_succeeded = True` AND `ocr_result["ocr_skipped"]` absent or `False`
 
 2. Upload through UI form (Residential, 1 floor):
    - **SSE `floorplan_cv`** event: `geometry_confidence ≥ 0.75`, `accepted = True`
@@ -573,4 +695,20 @@ Baseline (live run, pre-fix): `geometry_confidence = 0.4172`, `scale_source = "d
    - External wall items > Internal partition items (external has more area)
    - `quantity_source` shows `"category_distributed"` or `"geometry"` per item
 
-4. **Run tests:** `python -m pytest backend/tests/unit/14_floorplan_pipeline/ backend/tests/unit/quantity_gen/ -v`
+4. **Run tests:** `python -m pytest backend/tests/unit/14_floorplan_pipeline/ backend/tests/unit/08_quantity_estimation/ -v`
+
+---
+
+## Operational concerns (added 2026-05-20 review)
+
+### Vision API budget
+Each uncached call costs ~$0.005–$0.05 depending on model. With caching (SHA-256 of image bytes), repeated uploads of the same plan are free. Cost ceiling per estimate: 1 vision call. Document in the README before shipping.
+
+### Latency
+Vision API adds ~2–10s p50 to the pipeline. The orchestrator stays sync; the existing SSE stream (`floorplan_cv` event) already handles the long-running case. Acceptance criteria: p95 pipeline latency under 15s including vision call. If it exceeds, move the whole pipeline to a background task — do not partially async the orchestrator.
+
+### Disk usage
+Change C adds preprocessed copies (~2× original size due to upscale) + Change A adds vision response cache (~2KB JSON per image). Both live under `backend/temp/floorplans/` and `backend/temp/vision_ocr_cache/`. Expected growth: ~250KB per unique floor plan. Document retention policy (e.g. 30-day TTL via a `cron`/scheduled cleanup task) before shipping.
+
+### Tracked cache file regression (out of plan scope)
+Commit `f8a9433` accidentally committed three cache JPGs to `backend/temp/floorplans/`. These should never be in git. Track via a separate cleanup PR that adds `backend/temp/` to `.gitignore` and `git rm --cached`s the three files. Not blocking for this plan.

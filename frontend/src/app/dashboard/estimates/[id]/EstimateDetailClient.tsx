@@ -82,7 +82,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 
 const PIPELINE_STAGES = [
   { key: "floorplan_cv", label: "Floor Plan Analysis", optional: true },
-  { key: "floorplan_acceptance", label: "Plan Acceptance Check", optional: true },
+  /* { key: "floorplan_acceptance", label: "Plan Acceptance Check", optional: true }, */
   { key: "baseline_boq", label: "BOQ Generation" },
   { key: "boq_validation", label: "BOQ Validation" },
   { key: "bsr_matching", label: "BSR Rate Matching" },
