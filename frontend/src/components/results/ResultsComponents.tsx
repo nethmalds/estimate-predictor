@@ -319,12 +319,11 @@ function FullBoqTable({ items, grandTotal }: FullBoqTableProps) {
             <TableBody>
               {pageItems.map((item, i) => {
                 const isNoMatch = item.match_type === "no_match";
-                const needsReview = item.needs_rate_review;
                 return (
                   <TableRow
                     key={i}
                     className={
-                      isNoMatch ? "bg-destructive/5" : needsReview ? "bg-yellow-500/5" : ""
+                      isNoMatch ? "bg-destructive/5" : ""
                     }
                   >
                     <TableCell className="text-muted-foreground text-xs">
@@ -335,8 +334,8 @@ function FullBoqTable({ items, grandTotal }: FullBoqTableProps) {
                     </TableCell>
                     <TableCell className="max-w-xs text-xs">
                       <div className="flex items-start gap-1">
-                        {(isNoMatch || needsReview) && (
-                          <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-yellow-400" />
+                        {isNoMatch && (
+                          <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-destructive" />
                         )}
                         <span className="break-words whitespace-normal">
                           {item.description ?? item.bsr_description ?? "—"}

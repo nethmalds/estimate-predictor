@@ -26,7 +26,11 @@ from services.quantity_gen_process.rule_based_calculator import (
     calculate_from_geometry,
     calculate_parametric,
 )
-from services.quantity_gen_process.quantity_calculator import predict_quantity
+from services.quantity_gen_process.quantity_calculator import (
+    predict_quantity,
+    predict_category_total,
+    distribute_category_to_items,
+)
 from services.quantity_gen_process.confidence_scoring import (
     score_geometry_confidence,
     fuse_candidates,
@@ -34,6 +38,10 @@ from services.quantity_gen_process.confidence_scoring import (
 )
 from services.quantity_gen_process.quantity_validator import validate_quantity
 from services.shared.floor_scope import parse_floor_scope, strip_scope_tokens
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 # Categories whose quantity is a QS convention (lump sum = 1.0) — skip ML fusion.
@@ -353,6 +361,40 @@ def _resolve_quantity_predictor_items(
                 distribution_groups[cat] = []
             distribution_groups[cat].append(item)
 
+    # ── Tier 2: category-level ML prediction (additive — failures fall through) ──
+    # Compose a geometry-shaped dict that also carries per_floor_area_m2 from
+    # project_info so the distribution helper can pick `per_floor_area_x_qs_weight`
+    # when items span multiple floors.
+    tier2_geometry: dict = dict(geometry or {})
+    if "per_floor_area_m2" not in tier2_geometry:
+        per_floor = project_info.get("per_floor_area_m2") or {}
+        if per_floor:
+            tier2_geometry["per_floor_area_m2"] = per_floor
+
+    tier2_overrides: dict[int, tuple[float, float, str]] = {}
+    for category, group_items in distribution_groups.items():
+        if not group_items:
+            continue
+        try:
+            cat_pred = predict_category_total(category, project_info, tier2_geometry)
+            cat_total = float(cat_pred.get("category_total") or 0.0)
+            if cat_total <= 0:
+                continue
+            cat_conf = float(cat_pred.get("confidence") or 0.0)
+            distributed = distribute_category_to_items(
+                cat_total, cat_conf, group_items, tier2_geometry
+            )
+            for original, dist in zip(group_items, distributed):
+                tier2_overrides[id(original)] = (
+                    float(dist["quantity"]),
+                    float(dist["quantity_confidence_score"]),
+                    str(dist["quantity_allocation_method"]),
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "Tier-2 category prediction failed for %s: %s", category, exc
+            )
+
     # ── Distribute global ML predictions by QS weights ───────────────────────
     for category, group_items in distribution_groups.items():
         if not group_items:
@@ -394,6 +436,25 @@ def _resolve_quantity_predictor_items(
             item["reconciliation_summary"]    = _build_reconciliation_summary(
                 cands_meta, fused_qty, dominant_src, item_unit
             )
+
+            # Tier-2 override: when category-level ML produced a non-zero total,
+            # prefer its distributed share over the per-item global allocation.
+            override = tier2_overrides.get(id(item))
+            if override is not None:
+                tier_qty, tier_conf, tier_method = override
+                item["quantity"]                   = tier_qty
+                item["final_quantity"]             = tier_qty
+                item["quantity_source"]            = "category_distributed"
+                item["quantity_confidence_score"]  = tier_conf
+                item["quantity_confidence"]        = tier_conf
+                item["quantity_allocation_method"] = tier_method
+                recon = dict(item.get("reconciliation_summary") or {})
+                recon["method"] = "category_distribution"
+                recon["allocation_note"] = (
+                    f"Tier-2 category ML distribution via {tier_method}"
+                )
+                item["reconciliation_summary"] = recon
+
             # Stage 3: validate
             validate_quantity(item, geometry, floors)
 
@@ -678,6 +739,13 @@ def _allocate_floor_scoped_quantities(
         # ── Allocation triggers ────────────────────────────────────────────────
         # (a) Over-count: group sum vastly exceeds whole-building reference.
         over_counted = group_sum > whole_qty * _ALLOCATION_OVERCOUNT_THRESHOLD
+        # (a′) Under-count: group sum sits far below the parametric reference
+        # — this most often happens when Tier-2 category ML predicts a low total.
+        under_counted = (
+            whole_qty > 0
+            and group_sum < whole_qty / _ALLOCATION_OVERCOUNT_THRESHOLD
+        )
+        over_counted = over_counted or under_counted
 
         # (b) Lost per-floor differentiation: items have distinct floor scopes
         # AND per_floor_area_m2 has differing values for them AND items are

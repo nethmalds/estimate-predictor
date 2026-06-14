@@ -10,6 +10,7 @@ Returns a structured geometry dict consumed by the floorplan pipeline.
 from __future__ import annotations
 
 import math
+import warnings
 from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -55,23 +56,31 @@ class YOLOFloorplanDetector:
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._model = None  # type: ignore[attr-defined]
+            cls._instance._load_error: str | None = None
         return cls._instance
 
     def _load(self) -> None:
         if self._model is not None:
             return
+        if self._load_error is not None:
+            return                       # already failed; callers check _load_error
         try:
-            import torch
             from ultralytics import YOLO
-
-            device = 0 if torch.cuda.is_available() else "cpu"
+            # Force CPU to avoid VRAM contention with other GPU-resident services
+            # (e.g. Ollama LLM). The 21.5 MB model runs acceptably fast on CPU.
+            device = "cpu"
             self._model = YOLO(str(_MODEL_PATH))
             self._device = device
-        except ImportError as exc:
-            raise ImportError(
-                "ultralytics and torch are required. "
-                "Install with: pip install ultralytics torch"
-            ) from exc
+        except Exception as exc:
+            self._load_error = (
+                f"ultralytics/torch not installed: {exc}"
+                if isinstance(exc, ImportError)
+                else f"{type(exc).__name__}: {exc}"
+            )
+            warnings.warn(
+                f"[YOLOFloorplanDetector] Model load failed — {self._load_error}",
+                stacklevel=2,
+            )
 
     def run(self, image_path: str) -> dict:
         """Run inference on *image_path* and return structured detections.
@@ -87,6 +96,8 @@ class YOLOFloorplanDetector:
             img_h   : int         — original image height in pixels
         """
         self._load()
+        if self._load_error is not None:
+            return _empty_result()
 
         results = self._model.predict(  # type: ignore[union-attr]
             source=image_path,
@@ -158,7 +169,12 @@ class YOLOFloorplanDetector:
 
 
 def _empty_result(img_w: int = 0, img_h: int = 0) -> dict:
-    return {"rooms": [], "doors": 0, "windows": 0, "raw": [], "img_w": img_w, "img_h": img_h}
+    return {
+        "rooms": [], "doors": 0, "windows": 0, "raw": [],
+        "img_w": img_w, "img_h": img_h,
+        "_yolo_avg_conf": 0.0,
+        "_yolo_detection_count": 0,
+    }
 
 
 def pixels_to_m2(area_px: float, img_w: int, img_h: int, known_area_m2: float | None = None) -> float:

@@ -593,3 +593,224 @@ def _coerce_int(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+# ---------------------------------------------------------------------------
+# Tier-2 cascade: category-level ML prediction + item distribution
+# ---------------------------------------------------------------------------
+
+def predict_category_total(
+    category_slug: str,
+    project_info: dict[str, Any],
+    geometry: dict | None = None,
+) -> dict[str, Any]:
+    """Predict the aggregate quantity for an entire category using the global ML model.
+
+    Returns
+    -------
+    dict with keys:
+        category_total     : float — predicted total quantity for the category
+        unit               : str   — most common unit for this category
+        confidence         : float — feature_completeness × 0.75 (global scope)
+        is_category_level  : True
+    """
+    _try_load_quantity_predictor()
+    if _artifact is None:
+        return {
+            "category_total":    0.0,
+            "unit":              _SLUG_TO_DEFAULT_UNIT.get(category_slug, "m²"),
+            "confidence":        0.0,
+            "is_category_level": True,
+        }
+
+    try:
+        import numpy as np  # type: ignore[import]
+
+        unit = _SLUG_TO_DEFAULT_UNIT.get(category_slug, "m²")
+        synthetic_item: dict[str, Any] = {
+            "category":    category_slug,
+            "unit":        unit,
+            "description": category_slug,
+        }
+        # Reuse the standard item-level prediction path; treat its output as
+        # the category total when the per-item model is absent (global scope).
+        ml = _predict_with_quantity_predictor(synthetic_item, project_info)
+        category_total = float(ml.get("quantity") or 0.0)
+        completeness = float(ml.get("feature_completeness") or 0.0)
+        confidence = round(completeness * 0.75, 4)
+
+        return {
+            "category_total":    max(category_total, 0.0),
+            "unit":              unit,
+            "confidence":        confidence,
+            "is_category_level": True,
+        }
+    except Exception:
+        return {
+            "category_total":    0.0,
+            "unit":              _SLUG_TO_DEFAULT_UNIT.get(category_slug, "m²"),
+            "confidence":        0.0,
+            "is_category_level": True,
+        }
+
+
+# QS heuristic weights used by `_resolve_distribution_weights`. Kept independent
+# of `service._get_qs_weight` to avoid an import cycle.
+_QS_DISTRIBUTION_RULES: dict[str, list[tuple[str, float]]] = {
+    "concrete_works": [
+        ("slab", 40.0), ("beam", 25.0), ("column", 20.0), ("stair", 15.0),
+        ("lintel", 5.0), ("grade 20", 35.0), ("grade 25", 35.0), ("concrete", 30.0),
+    ],
+    "formwork": [
+        ("formwork", 30.0), ("shuttering", 30.0), ("mould", 10.0),
+    ],
+    "reinforcement": [
+        ("reinforcement", 30.0), ("tor steel", 30.0), ("mild steel", 25.0), ("brc mesh", 20.0),
+    ],
+    "brick_masonry": [
+        ("9", 70.0), ("225", 70.0), ("4.5", 30.0), ("112", 30.0),
+        ("brick", 50.0), ("block", 50.0),
+    ],
+    "flooring_and_tiling": [
+        ("floor", 50.0), ("tile", 50.0), ("skirting", 10.0),
+    ],
+    "plastering_and_rendering": [
+        ("plaster", 40.0), ("render", 35.0), ("skim", 30.0),
+        ("wall", 40.0), ("internal", 30.0), ("external", 20.0),
+    ],
+    "painting_and_finishes": [
+        ("paint", 30.0), ("emulsion", 25.0), ("primer", 20.0), ("enamel", 15.0),
+        ("weathershield", 20.0), ("wax", 10.0), ("preserv", 10.0),
+        ("woodwork", 15.0), ("steelwork", 10.0), ("grille", 10.0),
+    ],
+    "roofing_and_ceiling": [
+        ("timber", 50.0), ("framework", 50.0), ("tile", 40.0), ("sheet", 40.0),
+        ("ridge", 5.0), ("valance", 5.0), ("gutter", 5.0), ("downpipe", 5.0),
+        ("asbestos", 40.0), ("ceiling", 10.0), ("soffit", 10.0),
+    ],
+    "sanitary_and_plumbing": [
+        ("water closet", 20.0), ("wc", 20.0), ("pipe", 20.0), ("shower", 15.0),
+        ("basin", 15.0), ("sink", 10.0), ("tank", 10.0), ("tap", 5.0),
+        ("gully", 5.0),
+    ],
+    "electrical_and_mechanical": [
+        ("light", 30.0), ("socket", 25.0), ("cable", 15.0), ("wire", 15.0),
+        ("switch", 10.0), ("fan", 10.0), ("distribution board", 5.0),
+        ("db", 5.0), ("floodlight", 20.0), ("led", 15.0),
+    ],
+    "piling_and_substructure": [
+        ("excavat", 40.0), ("footing", 40.0), ("foundation", 40.0), ("rubble", 30.0),
+        ("backfill", 30.0), ("earth", 30.0), ("concrete", 20.0), ("screed", 15.0),
+        ("pcc", 15.0), ("sand", 15.0), ("river sand", 18.0),
+        ("cement pot", 10.0),
+    ],
+    "excavation_and_earthwork": [
+        ("clear", 50.0), ("excavat", 50.0), ("trench", 40.0), ("transport", 20.0),
+    ],
+    "external_and_civil_works": [
+        ("paving", 30.0), ("fence", 30.0), ("gate", 20.0), ("road", 20.0),
+    ],
+    "doors_windows_and_glazing": [
+        ("window", 40.0), ("casement", 40.0), ("glaz", 35.0), ("door", 35.0),
+    ],
+    "demolition_and_removal": [
+        ("brick wall", 50.0), ('9" brick', 50.0), ("drain", 30.0),
+        ("demolit", 40.0), ("remov", 30.0),
+    ],
+}
+
+
+def _qs_weight_for(category: str, description: str) -> float:
+    desc = str(description).lower()
+    for keyword, weight in _QS_DISTRIBUTION_RULES.get(category, []):
+        if keyword in desc:
+            return weight
+    return 10.0
+
+
+def _resolve_distribution_weights(
+    items: list[dict[str, Any]],
+    geometry: dict[str, Any] | None,
+) -> tuple[list[float], str]:
+    """Return ``(weight_list, method_name)`` for distributing a total across items.
+
+    Priority:
+      1. per_floor_area × qs_weight  (both axes vary)
+      2. per_floor_area              (only floor varies)
+      3. qs_weight                   (only description varies)
+      4. equal_split                 (fallback)
+    """
+    if not items:
+        return [], "equal_split"
+
+    per_floor_area: dict[str, float] = {}
+    if geometry:
+        # Geometry dict may carry per-floor area breakdown alongside totals.
+        raw = geometry.get("per_floor_area_m2") or {}
+        if isinstance(raw, dict):
+            per_floor_area = {str(k): float(v) for k, v in raw.items()}
+
+    categories = [str(it.get("category") or "misc").lower() for it in items]
+    descriptions = [str(it.get("description") or "") for it in items]
+    floor_scopes = [str(it.get("floor_scope") or "all") for it in items]
+
+    qs_weights = [_qs_weight_for(cat, desc) for cat, desc in zip(categories, descriptions)]
+    qs_varies = len(set(qs_weights)) > 1
+
+    all_have_known_floor = bool(per_floor_area) and all(
+        fs != "all" and fs in per_floor_area for fs in floor_scopes
+    )
+    if all_have_known_floor:
+        floor_weights = [per_floor_area[fs] for fs in floor_scopes]
+        floor_varies = len(set(round(w, 4) for w in floor_weights)) > 1
+    else:
+        floor_weights = None
+        floor_varies = False
+
+    if floor_weights is not None and floor_varies and qs_varies:
+        combined = [fw * qw for fw, qw in zip(floor_weights, qs_weights)]
+        return combined, "per_floor_area_x_qs_weight"
+    if floor_weights is not None and floor_varies:
+        return floor_weights, "per_floor_area"
+    if qs_varies:
+        return qs_weights, "qs_weight"
+    return [1.0] * len(items), "equal_split"
+
+
+def distribute_category_to_items(
+    category_total: float,
+    category_confidence: float,
+    items: list[dict[str, Any]],
+    geometry: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Distribute *category_total* across *items* proportional to resolved weights.
+
+    Returns shallow copies of the input items annotated with Tier-2 metadata —
+    the originals are not mutated.
+    """
+    weights, method = _resolve_distribution_weights(items, geometry)
+    if not weights:
+        return [dict(it) for it in items]
+
+    total_weight = sum(weights) or float(len(items))
+
+    result: list[dict[str, Any]] = []
+    for item, w in zip(items, weights):
+        share = (w / total_weight) if total_weight > 0 else (1.0 / max(len(items), 1))
+        item_qty = round(category_total * share, 4)
+        new_item = {**item}
+        new_item["quantity"]                   = item_qty
+        new_item["final_quantity"]             = item_qty
+        new_item["quantity_source"]            = "category_distributed"
+        new_item["quantity_allocation_method"] = method
+        new_item["quantity_confidence_score"]  = round(category_confidence * share, 4)
+        new_item["quantity_confidence"]        = new_item["quantity_confidence_score"]
+        recon = dict(new_item.get("reconciliation_summary") or {})
+        recon["method"] = "category_distribution"
+        recon["allocation_note"] = (
+            f"Tier-2 category ML total {category_total:.2f} distributed via {method}"
+        )
+        new_item["reconciliation_summary"] = recon
+        result.append(new_item)
+
+    return result

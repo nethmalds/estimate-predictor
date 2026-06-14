@@ -59,6 +59,25 @@ def emit_floorplan_progress(floorplan_urls, callback=None):
     return events
 
 
+def emit_floorplan_all_failed(callback=None):
+    """Mirror the 'all images failed' branch from estimation_pipeline.py after the fix.
+
+    Emits: floorplan_cv=failed, floorplan_acceptance=skipped.
+    """
+    events: list[dict] = []
+
+    def _emit(step: str, status: str, data: dict) -> None:
+        events.append({"step": step, "status": status, "data": data})
+        if callback is not None:
+            callback(step, status, data)
+
+    _emit("floorplan_cv", "failed", {"error": "All floorplan images failed processing"})
+    _emit("floorplan_acceptance", "skipped",
+          {"reason": "floorplan_cv failed — no geometry to evaluate"})
+
+    return events
+
+
 # ===========================================================================
 # Group 1 — Pure unit tests (no pipeline import required)
 # ===========================================================================
@@ -139,3 +158,47 @@ class TestPipelineEmitHelper:
         """`_emit(None, ...)` must be a no-op and must not raise."""
         # Should complete without exception
         _pipeline_emit(None, "test_step", "started", {})
+
+
+# ===========================================================================
+# Group 3 — All images failed: acceptance must be 'skipped', not 'pending'
+# ===========================================================================
+
+class TestAllImagesFailedEmitsAcceptanceSkipped:
+    """When all floorplan images fail, floorplan_acceptance must emit 'skipped'."""
+
+    def test_floorplan_cv_failed_event_is_emitted(self):
+        events = emit_floorplan_all_failed()
+        cv_events = [e for e in events if e["step"] == "floorplan_cv"]
+        assert len(cv_events) == 1
+        assert cv_events[0]["status"] == "failed"
+
+    def test_floorplan_acceptance_skipped_event_is_emitted(self):
+        events = emit_floorplan_all_failed()
+        acc_events = [e for e in events if e["step"] == "floorplan_acceptance"]
+        assert len(acc_events) == 1
+        assert acc_events[0]["status"] == "skipped"
+
+    def test_acceptance_skipped_has_non_empty_reason(self):
+        events = emit_floorplan_all_failed()
+        acc = next(e for e in events if e["step"] == "floorplan_acceptance")
+        reason = acc["data"].get("reason")
+        assert isinstance(reason, str) and reason, (
+            f"Expected non-empty 'reason' string, got: {acc['data']!r}"
+        )
+
+    def test_exactly_two_events_emitted(self):
+        events = emit_floorplan_all_failed()
+        assert len(events) == 2
+
+    def test_callback_invoked_for_both_events(self):
+        mock_cb = MagicMock()
+        emit_floorplan_all_failed(callback=mock_cb)
+        assert mock_cb.call_count == 2
+        statuses = [c.args[1] for c in mock_cb.call_args_list]
+        assert statuses == ["failed", "skipped"]
+
+    def test_event_order_cv_then_acceptance(self):
+        events = emit_floorplan_all_failed()
+        assert events[0]["step"] == "floorplan_cv"
+        assert events[1]["step"] == "floorplan_acceptance"

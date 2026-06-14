@@ -29,19 +29,60 @@ def get_detection_confidence(image_path: str) -> float:
 
 
 def preprocess_image(image_path: str) -> dict:
-    """Validate the image file and return basic metadata."""
+    """Preprocess the floor plan image for downstream OCR/YOLO consumption.
+
+    Steps: greyscale → upscale (if narrower than 640 px) → binarise to black
+    walls on a white background. Results are cached by SHA-256 of the input
+    bytes so repeated calls on the same image are O(1) disk lookups, sharing
+    retention policy with the download cache.
+    """
+    import hashlib
+
+    from PIL import Image
+
+    from services.floorplan_process.image_cache import _CACHE_DIR
+
     p = Path(image_path)
     if not p.exists():
         raise FileNotFoundError(f"Floor plan image not found: {image_path}")
 
-    size_bytes = p.stat().st_size
-    suffix = p.suffix.lower()
+    image_bytes = p.read_bytes()
+    cache_key   = hashlib.sha256(image_bytes).hexdigest()[:24]
+
+    _CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    processed_path = _CACHE_DIR / f"{cache_key}_processed{p.suffix or '.png'}"
+
+    img = Image.open(p)
+    original_size = img.size
+
+    if not processed_path.exists():
+        # 1. Greyscale
+        img = img.convert("L")
+
+        # 2. Upscale if too small for YOLO (optimal input ≈ 640 px)
+        if img.width < 640:
+            scale = 640 / img.width
+            img = img.resize(
+                (int(img.width * scale), int(img.height * scale)),
+                Image.LANCZOS,
+            )
+
+        # 3. Binarise — black walls on white background
+        img = img.point(lambda px: 0 if px < 200 else 255, "L")
+        img.save(processed_path)
+        processed_size = img.size
+    else:
+        with Image.open(processed_path) as cached:
+            processed_size = cached.size
 
     return {
-        "image_path": image_path,
-        "size_bytes": size_bytes,
-        "format": suffix.lstrip("."),
-        "method": "yolo_preprocess",
+        "image_path":     image_path,
+        "processed_path": str(processed_path),
+        "original_size":  original_size,
+        "processed_size": processed_size,
+        "size_bytes":     p.stat().st_size,
+        "format":         p.suffix.lstrip("."),
+        "method":         "preprocess_binarise",
     }
 
 
@@ -87,9 +128,13 @@ def extract_room_boundaries(image_path: str) -> dict:
             img_h=img_h,
             known_area_m2=None,  # no OCR calibration at this stage
         )
-        rooms.append({
+        room_entry: dict = {
             "label": raw.get("label", f"zone_{i + 1}"),
             "area_m2": round(area_m2, 2),
-        })
+        }
+        bbox_px = raw.get("bbox_px")
+        if bbox_px is not None:
+            room_entry["bbox_px"] = bbox_px
+        rooms.append(room_entry)
 
-    return {"rooms": rooms, "method": "yolo_new_best"}
+    return {"rooms": rooms, "method": "yolo_new_best", "img_w": img_w, "img_h": img_h}

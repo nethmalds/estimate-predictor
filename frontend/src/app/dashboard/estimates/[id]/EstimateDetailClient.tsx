@@ -82,7 +82,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 
 const PIPELINE_STAGES = [
   { key: "floorplan_cv", label: "Floor Plan Analysis", optional: true },
-  { key: "floorplan_acceptance", label: "Plan Acceptance Check", optional: true },
+  /* { key: "floorplan_acceptance", label: "Plan Acceptance Check", optional: true }, */
   { key: "baseline_boq", label: "BOQ Generation" },
   { key: "boq_validation", label: "BOQ Validation" },
   { key: "bsr_matching", label: "BSR Rate Matching" },
@@ -105,7 +105,8 @@ function getStageStatus(
   if (step.status === "skipped") return "skipped";
   if (step.status === "completed" || step.status === "accepted" || step.status === "done")
     return "completed";
-  if (step.status === "rejected" || step.status === "failed") return "failed";
+  if (step.status === "failed") return "failed";
+  if (step.status === "rejected") return "skipped"; // graceful degradation, not a crash
   return "active";
 }
 

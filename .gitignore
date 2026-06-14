@@ -16,3 +16,7 @@ audits/
 
 # Claude-generated plans and memory (local to each developer's machine)
 .claude/
+.gstack/
+
+# Runtime caches — never commit (download cache, preprocessing cache, vision OCR cache)
+backend/temp/
