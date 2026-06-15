@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# One-command production runner for the full estimator stack.
-# Usage:  ./run.sh [up|down|logs|rebuild|status|migrate]
+# One-command production runner for the estimator stack (API-only, frontend on Vercel).
+# Usage:  ./run.sh [up|down|logs|rebuild|status]
 # Requires: Docker + Docker Compose v2.
-# Backend env:  backend/.env   Frontend env:  frontend/.env
+# Backend env:  backend/.env
 #
 # Infrastructure reuse:
 #   If dev containers (estimation_postgres / estimation_chroma / estimation_redis)
@@ -15,7 +15,6 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE="$ROOT/docker-compose.prod.yml"
 BACKEND_ENVF="$ROOT/backend/.env"
-FRONTEND_ENVF="$ROOT/frontend/.env"
 
 # Fixed project name so the network name is always predictable
 export COMPOSE_PROJECT_NAME=estimator
@@ -56,18 +55,12 @@ require_env() {
     API_SECRET_KEY \
     OLLAMA_API_KEY OLLAMA_MODEL \
     EMBEDDING_MODEL
-
-  _check_env_file "$FRONTEND_ENVF" "frontend" \
-    AUTH_SECRET \
-    NEXT_PUBLIC_API_BASE_URL \
-    NEXT_PUBLIC_APP_URL
 }
 
-# Wrapper so every docker compose call uses both env files and the prod compose file
+# Wrapper so every docker compose call uses the backend env file and the prod compose file
 dc() {
   docker compose \
     --env-file "$BACKEND_ENVF" \
-    --env-file "$FRONTEND_ENVF" \
     -f "$COMPOSE" "$@"
 }
 
@@ -158,7 +151,7 @@ case "${1:-up}" in
     echo "→ Building images and starting all services..."
     if _dev_infra_running; then
       _connect_dev_infra
-      dc up -d --build --no-deps backend frontend caddy
+      dc up -d --build --no-deps backend caddy
     else
       echo "→ No dev infrastructure found — starting prod infrastructure..."
       dc --profile infra up -d --build
@@ -180,8 +173,8 @@ case "${1:-up}" in
     echo "→ Rebuilding all images without cache..."
     if _dev_infra_running; then
       _connect_dev_infra
-      dc build --no-cache backend frontend caddy
-      dc up -d --build --no-deps backend frontend caddy
+      dc build --no-cache backend caddy
+      dc up -d --build --no-deps backend caddy
     else
       dc --profile infra build --no-cache
       dc --profile infra up -d
@@ -192,10 +185,7 @@ case "${1:-up}" in
   status)
     dc ps
     ;;
-  migrate)
-    echo "→ Running Alembic migrations inside the backend container..."
-    dc exec backend alembic upgrade head
-    ;;
+
   seed)
     echo "→ Seeding categories..."
     dc exec -T backend python scripts/seed_categories.py
@@ -205,7 +195,7 @@ case "${1:-up}" in
     dc exec -T backend python scripts/ingest_bsr.py ${2:-}
     ;;
   *)
-    echo "Usage: $0 {up|down|logs|rebuild|status|migrate|seed|ingest}"
+    echo "Usage: $0 {up|down|logs|rebuild|status|seed|ingest}"
     exit 1
     ;;
 esac

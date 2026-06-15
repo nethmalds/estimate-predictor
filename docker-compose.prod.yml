@@ -93,28 +93,6 @@ services:
       - ./backend/infrastructure/data_layer/storage:/app/infrastructure/data_layer/storage
     networks: [estimator_net]
 
-  # ── Next.js frontend ────────────────────────────────────────────────────────
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: docker/Dockerfile
-      args:
-        # NEW: NEXT_PUBLIC_* must be set at build time (inlined by Next.js compiler)
-        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL}
-        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL}
-    restart: unless-stopped
-    depends_on: [backend]
-    environment:
-      AUTH_SECRET: ${AUTH_SECRET}
-      UPLOADTHING_TOKEN: ${UPLOADTHING_TOKEN}
-      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL}
-      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL}
-      # Server-side API calls (e.g. auth authorize callback) bypass Caddy and hit the backend directly
-      API_BASE_URL: "http://backend:8000"
-      # Bind to all interfaces so the health check (localhost:3000) and Caddy (frontend:3000) both work
-      HOSTNAME: "0.0.0.0"
-    networks: [estimator_net]
-
   # ── Caddy reverse proxy + auto-TLS ─────────────────────────────────────────
   caddy:
     image: caddy:2-alpine
@@ -123,7 +101,7 @@ services:
     ports:
       - "80:80"
       - "443:443"
-    depends_on: [backend, frontend]
+    depends_on: [backend]
     environment:
       # NEW: Set DOMAIN=http://estimate for a single-label HTTP host
       DOMAIN: ${DOMAIN:-http://estimate}
