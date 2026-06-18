@@ -14,7 +14,6 @@ import type {
   RegisterResponse,
   ResetPasswordRequest,
   ResetPasswordResponse,
-  // NEW: H11
   ResendVerificationRequest,
   ResendVerificationResponse,
   VerifyEmailResponse,
